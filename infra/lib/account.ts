@@ -80,9 +80,10 @@ export const ELEVENLABS_ZERO_RETENTION: '0' | '1' = '0';
 /**
  * Hosting bucket for the PartWays web apps, laid out by folder:
  *
- *   partways-webapps-<account>/
+ *   webapps.partways.org/
  *     PORTAL/   -> the website (home, /hr/, /interview/)
  *     BMS/      -> the back-office, when it exists
  */
+export const WEBAPPS_BUCKET_NAME = 'webapps.partways.org';
 export const PORTAL_PREFIX = 'PORTAL';
 export const BMS_PREFIX = 'BMS';

@@ -14,6 +14,7 @@ import {
   PORTAL_PREFIX,
   PREFIX,
   REGION,
+  WEBAPPS_BUCKET_NAME,
 } from '../lib/account';
 import { AuthStack } from '../lib/auth-stack';
 import { DataStack } from '../lib/data-stack';
@@ -84,7 +85,7 @@ function appStacks(env: cdk.Environment): cdk.Stack[] {
     description: 'PartWays PORTAL: CloudFront for the website, the streaming API, and its GitHub Actions deploy role',
     appName: 'portal',
     githubRepo: `${GITHUB_OWNER}/PARTWAYS-PORTAL`,
-    bucketName: hosting.bucketName,
+    bucketName: WEBAPPS_BUCKET_NAME,
     sitePrefix: PORTAL_PREFIX,
     githubOidcProviderArn: hosting.githubOidcProviderArn,
     api: {
