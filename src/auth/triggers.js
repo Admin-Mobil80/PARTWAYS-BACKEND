@@ -1,9 +1,25 @@
 // Cognito custom authentication triggers: a 6-digit code sent by SES.
 import crypto from 'node:crypto';
 import { SESv2Client, SendEmailCommand } from '@aws-sdk/client-sesv2';
+import { STSClient, AssumeRoleCommand } from '@aws-sdk/client-sts';
 
 const MAX_ATTEMPTS = 3;
-const ses = new SESv2Client({});
+
+// With SES_ROLE_ARN set, codes are sent through another account's SES by
+// assuming its send-only role. The SDK caches the credentials until they expire.
+function sesClient() {
+  const RoleArn = process.env.SES_ROLE_ARN;
+  if (!RoleArn) return new SESv2Client({});
+  const sts = new STSClient({});
+  return new SESv2Client({
+    region: process.env.SES_REGION,
+    credentials: async () => {
+      const { Credentials: c } = await sts.send(new AssumeRoleCommand({ RoleArn, RoleSessionName: 'partways-sign-in' }));
+      return { accessKeyId: c.AccessKeyId, secretAccessKey: c.SecretAccessKey, sessionToken: c.SessionToken, expiration: c.Expiration };
+    },
+  });
+}
+const ses = sesClient();
 
 export async function define(event) {
   const s = event.request.session || [];

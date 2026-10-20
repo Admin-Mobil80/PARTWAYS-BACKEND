@@ -2,7 +2,14 @@ import * as cdk from 'aws-cdk-lib';
 import * as cognito from 'aws-cdk-lib/aws-cognito';
 import * as iam from 'aws-cdk-lib/aws-iam';
 import { Construct } from 'constructs';
-import { PREFIX, SES_FROM_ADDRESS } from './account';
+import {
+  AUTH_MAILER_ROLE_NAME,
+  MAIL_ACCOUNT,
+  MAIL_REGION,
+  MAIL_SENDER_ROLE_NAME,
+  PREFIX,
+  SES_FROM_ADDRESS,
+} from './account';
 import { backendFunction } from './functions';
 
 /**
@@ -16,26 +23,26 @@ export class AuthStack extends cdk.Stack {
   constructor(scope: Construct, id: string, props: cdk.StackProps) {
     super(scope, id, props);
 
-    const trigger = (name: string, handler: string, sendsMail: boolean) => {
-      const fn = backendFunction(this, `${handler[0]!.toUpperCase()}${handler.slice(1)}Fn`, {
+    const trigger = (name: string, handler: string, role?: iam.IRole, environment?: Record<string, string>) =>
+      backendFunction(this, `${handler[0]!.toUpperCase()}${handler.slice(1)}Fn`, {
         name: `auth-${name}`,
         file: 'auth-triggers',
         handler,
         timeout: cdk.Duration.seconds(10),
-        environment: sendsMail ? { SES_FROM_ADDRESS } : undefined,
+        role,
+        environment,
       });
-      if (sendsMail) {
-        // Send only as the configured address.
-        fn.addToRolePolicy(
-          new iam.PolicyStatement({
-            actions: ['ses:SendEmail'],
-            resources: [`arn:aws:ses:${this.region}:${this.account}:identity/*`],
-            conditions: { StringEquals: { 'ses:FromAddress': SES_FROM_ADDRESS } },
-          }),
-        );
-      }
-      return fn;
-    };
+
+    // The code email goes out through the m80 account's SES, by assuming its
+    // send-only role. That role trusts this one by name, so the name is fixed.
+    const senderRoleArn = `arn:aws:iam::${MAIL_ACCOUNT}:role/${MAIL_SENDER_ROLE_NAME}`;
+    const mailerRole = new iam.Role(this, 'MailerRole', {
+      roleName: AUTH_MAILER_ROLE_NAME,
+      description: 'createAuthChallenge: sends sign-in codes through the m80 account SES',
+      assumedBy: new iam.ServicePrincipal('lambda.amazonaws.com'),
+      managedPolicies: [iam.ManagedPolicy.fromAwsManagedPolicyName('service-role/AWSLambdaBasicExecutionRole')],
+    });
+    mailerRole.addToPolicy(new iam.PolicyStatement({ actions: ['sts:AssumeRole'], resources: [senderRoleArn] }));
 
     this.userPool = new cognito.UserPool(this, 'UserPool', {
       userPoolName: `${PREFIX}-hr`,
@@ -44,9 +51,13 @@ export class AuthStack extends cdk.Stack {
       // Recovery is by an administrator only: there are no passwords to reset.
       accountRecovery: cognito.AccountRecovery.NONE,
       lambdaTriggers: {
-        defineAuthChallenge: trigger('define', 'defineAuthChallenge', true),
-        createAuthChallenge: trigger('create', 'createAuthChallenge', true),
-        verifyAuthChallengeResponse: trigger('verify', 'verifyAuthChallenge', false),
+        defineAuthChallenge: trigger('define', 'defineAuthChallenge'),
+        createAuthChallenge: trigger('create', 'createAuthChallenge', mailerRole, {
+          SES_FROM_ADDRESS,
+          SES_ROLE_ARN: senderRoleArn,
+          SES_REGION: MAIL_REGION,
+        }),
+        verifyAuthChallengeResponse: trigger('verify', 'verifyAuthChallenge'),
       },
       removalPolicy: cdk.RemovalPolicy.RETAIN,
     });

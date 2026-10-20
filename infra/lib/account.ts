@@ -3,10 +3,9 @@
  *
  * PartWays has its own AWS account, reached through SSO. The account is
  * hardcoded on purpose, so a deploy can never land in whatever account the
- * active credentials happen to point at. Deploy with:
- *   AWS_PROFILE=<partways-sso-profile> npm run deploy
+ * active credentials happen to point at. See README for the deploy commands.
  */
-export const ACCOUNT = ''; // TODO: the PartWays account id
+export const ACCOUNT = '720771544607'; // Stellrtek, via SSO profile 'stellrtek'
 export const REGION = ''; // TODO: e.g. ap-south-1
 
 /** Every PartWays resource name starts with this. */
@@ -23,10 +22,36 @@ export const GITHUB_OWNER = 'Admin-Mobil80';
 export const CREATE_GITHUB_OIDC_PROVIDER = true;
 
 /**
- * Sender for the 6-digit sign-in codes. Must be a verified SES identity in
- * REGION (in the SES sandbox, recipients must be verified too).
+ * Sign-in codes are sent through the m80 account's SES, which is out of the
+ * sandbox; everything else runs in the PartWays account above. m80 holds only
+ * the partways-mailer stack: the partways.org SES identity and a send-only
+ * role that the code-sending function assumes. Deploy that stack with the
+ * m80 SSO profile (wingtheidea), everything else with 'stellrtek'.
  */
-export const SES_FROM_ADDRESS = ''; // TODO: e.g. no-reply@partways.example
+export const SES_FROM_ADDRESS = 'no-reply@partways.org';
+export const MAIL_DOMAIN = 'partways.org';
+/** Custom MAIL FROM, so SPF aligns with partways.org. */
+export const MAIL_FROM_DOMAIN = `bounce.${MAIL_DOMAIN}`;
+export const MAIL_ACCOUNT = '231427841372'; // m80
+export const MAIL_REGION = 'us-east-1';
+/** The send-only role in m80, and the only role in this account allowed to assume it. */
+export const MAIL_SENDER_ROLE_NAME = 'partways-ses-sender';
+export const AUTH_MAILER_ROLE_NAME = 'partways-auth-mailer';
+
+/**
+ * The partways.org public hosted zone, in the PartWays account. Route 53 is
+ * global; the DNS stack sits in us-east-1, where CloudFront certificates for
+ * a custom domain will also have to live.
+ */
+export const ZONE_NAME = MAIL_DOMAIN;
+export const HOSTED_ZONE_ID = 'Z0321348257M6WKBR7WB8';
+export const DNS_REGION = 'us-east-1';
+
+/**
+ * SES issues the DKIM records only once partways-mailer has created the
+ * identity in m80. Copy its DkimRecord outputs here, then deploy partways-dns.
+ */
+export const DKIM_RECORDS: ReadonlyArray<{ readonly name: string; readonly value: string }> = [];
 
 /**
  * Optional comma-separated emails or @domains allowed to sign up and sign in.

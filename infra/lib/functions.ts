@@ -1,5 +1,6 @@
 import * as path from 'node:path';
 import * as cdk from 'aws-cdk-lib';
+import type * as iam from 'aws-cdk-lib/aws-iam';
 import * as lambda from 'aws-cdk-lib/aws-lambda';
 import { NodejsFunction, OutputFormat } from 'aws-cdk-lib/aws-lambda-nodejs';
 import * as logs from 'aws-cdk-lib/aws-logs';
@@ -18,6 +19,8 @@ export interface BackendFunctionProps {
   readonly handler: string;
   readonly timeout: cdk.Duration;
   readonly environment?: Record<string, string>;
+  /** An explicit execution role, when another account must name it. */
+  readonly role?: iam.IRole;
 }
 
 /**
@@ -38,6 +41,7 @@ export function backendFunction(scope: Construct, id: string, props: BackendFunc
     memorySize: 1024,
     timeout: props.timeout,
     environment: props.environment,
+    role: props.role,
     logGroup: new logs.LogGroup(scope, `${id}Logs`, {
       logGroupName: `/aws/lambda/${PREFIX}-${props.name}`,
       retention: logs.RetentionDays.ONE_MONTH,

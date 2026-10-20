@@ -7,7 +7,7 @@
     "build": "tsc",
     "synth": "cdk synth",
     "diff": "cdk diff --all",
-    "deploy": "cdk deploy --all",
+    "deploy": "cdk deploy partways-data partways-auth partways-hosting partways-portal",
     "test": "tsc --noEmit"
   },
   "dependencies": {

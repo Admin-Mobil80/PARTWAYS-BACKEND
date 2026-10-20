@@ -3,94 +3,121 @@ import * as cdk from 'aws-cdk-lib';
 import * as iam from 'aws-cdk-lib/aws-iam';
 import {
   ACCOUNT,
+  DNS_REGION,
   ELEVENLABS_ZERO_RETENTION,
   GITHUB_OWNER,
   HR_ALLOWED_EMAILS,
   LLM_MODEL,
   LLM_PROVIDER,
+  MAIL_ACCOUNT,
+  MAIL_REGION,
   PORTAL_PREFIX,
   PREFIX,
   REGION,
-  SES_FROM_ADDRESS,
 } from '../lib/account';
 import { AuthStack } from '../lib/auth-stack';
 import { DataStack } from '../lib/data-stack';
+import { DnsStack } from '../lib/dns-stack';
 import { HostingStack } from '../lib/hosting-stack';
+import { MailerStack } from '../lib/mailer-stack';
 import { StaticSiteStack } from '../lib/static-site-stack';
 
 const app = new cdk.App();
+const stacks: cdk.Stack[] = [];
 
-// `-c account=… -c region=…` exists only to synth before lib/account.ts is
-// filled in; deploys use the constants.
-const account = ACCOUNT || app.node.tryGetContext('account');
-const region = REGION || app.node.tryGetContext('region');
-const missing = [!account && 'ACCOUNT', !region && 'REGION', !SES_FROM_ADDRESS && 'SES_FROM_ADDRESS'].filter(Boolean);
-if (missing.length && !app.node.tryGetContext('account')) {
-  throw new Error(`Set ${missing.join(', ')} in lib/account.ts before synthesising or deploying.`);
+// Sign-in mail goes through the m80 account's SES. This is the only stack in
+// m80; deploy it with the m80 profile. Everything else is in ACCOUNT.
+stacks.push(
+  new MailerStack(app, 'partways-mailer', {
+    env: { account: MAIL_ACCOUNT, region: MAIL_REGION },
+    stackName: `${PREFIX}-mailer`,
+    description: `PartWays sign-in mail: the partways.org SES identity and a send-only role for account ${ACCOUNT}`,
+  }),
+);
+
+stacks.push(
+  new DnsStack(app, 'partways-dns', {
+    env: { account: ACCOUNT, region: DNS_REGION },
+    stackName: `${PREFIX}-dns`,
+    description: 'PartWays partways.org records: DKIM, MAIL FROM and DMARC for mail sent through m80 SES',
+  }),
+);
+
+// `-c region=…` exists only to synth before REGION is chosen; deploys use the constant.
+const region: string | undefined = REGION || app.node.tryGetContext('region');
+if (region) {
+  stacks.push(...appStacks({ account: ACCOUNT, region }));
+} else {
+  console.warn('REGION is not set in lib/account.ts: only partways-mailer and partways-dns are defined.');
 }
-const env: cdk.Environment = { account, region };
 
-const data = new DataStack(app, 'partways-data', {
-  env,
-  stackName: `${PREFIX}-data`,
-  description: 'PartWays table and provider keys',
-});
-
-const auth = new AuthStack(app, 'partways-auth', {
-  env,
-  stackName: `${PREFIX}-auth`,
-  description: 'PartWays HR sign-in: Cognito custom auth with 6-digit email codes sent by SES',
-});
-
-const hosting = new HostingStack(app, 'partways-hosting', {
-  env,
-  stackName: `${PREFIX}-hosting`,
-  description: 'PartWays hosting bucket (one folder per web app) and the GitHub Actions OIDC provider',
-});
-
-const portal = new StaticSiteStack(app, 'partways-portal', {
-  env,
-  stackName: `${PREFIX}-portal`,
-  description: 'PartWays PORTAL: CloudFront for the website, the streaming API, and its GitHub Actions deploy role',
-  appName: 'portal',
-  githubRepo: `${GITHUB_OWNER}/PARTWAYS-PORTAL`,
-  bucketName: hosting.bucketName,
-  sitePrefix: PORTAL_PREFIX,
-  githubOidcProviderArn: hosting.githubOidcProviderArn,
-  api: {
-    file: 'api',
-    environment: {
-      TABLE_NAME: data.table.tableName,
-      SECRETS_ARN: data.providerSecrets.secretArn,
-      COGNITO_USER_POOL_ID: auth.userPool.userPoolId,
-      COGNITO_CLIENT_ID: auth.client.userPoolClientId,
-      HR_ALLOWED_EMAILS,
-      LLM_PROVIDER,
-      LLM_MODEL,
-      ELEVENLABS_ZERO_RETENTION,
-    },
-    grant: (fn) => {
-      data.table.grantReadWriteData(fn);
-      data.providerSecrets.grantRead(fn);
-      // Creates an organisation's people on sign-up and team changes; cannot delete anyone.
-      fn.addToRolePolicy(
-        new iam.PolicyStatement({
-          actions: ['cognito-idp:AdminGetUser', 'cognito-idp:AdminCreateUser'],
-          resources: [auth.userPool.userPoolArn],
-        }),
-      );
-      fn.addToRolePolicy(
-        new iam.PolicyStatement({
-          actions: ['bedrock:InvokeModel', 'bedrock:InvokeModelWithResponseStream'],
-          resources: ['*'],
-        }),
-      );
-    },
-  },
-});
-
-for (const stack of [data, auth, hosting, portal]) {
+// The account is shared with nothing else today, but tags keep PartWays'
+// resources identifiable, as in every other WingTheIdea product.
+for (const stack of stacks) {
   cdk.Tags.of(stack).add('project', PREFIX);
   cdk.Tags.of(stack).add('managed-by', 'cdk');
   cdk.Tags.of(stack).add('repo', `${GITHUB_OWNER}/PARTWAYS-BACKEND`);
+}
+
+function appStacks(env: cdk.Environment): cdk.Stack[] {
+  const data = new DataStack(app, 'partways-data', {
+    env,
+    stackName: `${PREFIX}-data`,
+    description: 'PartWays table and provider keys',
+  });
+
+  const auth = new AuthStack(app, 'partways-auth', {
+    env,
+    stackName: `${PREFIX}-auth`,
+    description: 'PartWays HR sign-in: Cognito custom auth with 6-digit email codes sent through m80 SES',
+  });
+
+  const hosting = new HostingStack(app, 'partways-hosting', {
+    env,
+    stackName: `${PREFIX}-hosting`,
+    description: 'PartWays hosting bucket (one folder per web app) and the GitHub Actions OIDC provider',
+  });
+
+  const portal = new StaticSiteStack(app, 'partways-portal', {
+    env,
+    stackName: `${PREFIX}-portal`,
+    description: 'PartWays PORTAL: CloudFront for the website, the streaming API, and its GitHub Actions deploy role',
+    appName: 'portal',
+    githubRepo: `${GITHUB_OWNER}/PARTWAYS-PORTAL`,
+    bucketName: hosting.bucketName,
+    sitePrefix: PORTAL_PREFIX,
+    githubOidcProviderArn: hosting.githubOidcProviderArn,
+    api: {
+      file: 'api',
+      environment: {
+        TABLE_NAME: data.table.tableName,
+        SECRETS_ARN: data.providerSecrets.secretArn,
+        COGNITO_USER_POOL_ID: auth.userPool.userPoolId,
+        COGNITO_CLIENT_ID: auth.client.userPoolClientId,
+        HR_ALLOWED_EMAILS,
+        LLM_PROVIDER,
+        LLM_MODEL,
+        ELEVENLABS_ZERO_RETENTION,
+      },
+      grant: (fn) => {
+        data.table.grantReadWriteData(fn);
+        data.providerSecrets.grantRead(fn);
+        // Creates an organisation's people on sign-up and team changes; cannot delete anyone.
+        fn.addToRolePolicy(
+          new iam.PolicyStatement({
+            actions: ['cognito-idp:AdminGetUser', 'cognito-idp:AdminCreateUser'],
+            resources: [auth.userPool.userPoolArn],
+          }),
+        );
+        fn.addToRolePolicy(
+          new iam.PolicyStatement({
+            actions: ['bedrock:InvokeModel', 'bedrock:InvokeModelWithResponseStream'],
+            resources: ['*'],
+          }),
+        );
+      },
+    },
+  });
+
+  return [data, auth, hosting, portal];
 }

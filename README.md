@@ -46,17 +46,31 @@ All dashboard numbers, assistant answers, reports and exports come from one func
 
 ## Deploy to AWS
 
-All PartWays AWS resources come from the CDK app in `infra/`; nothing is created by hand. PartWays has its own AWS account, reached through SSO. The account id, region, SES sender and other settings live in `infra/lib/account.ts`.
+All PartWays AWS resources come from the CDK app in `infra/`; nothing is created by hand. Settings (accounts, region, sender, LLM provider) live in `infra/lib/account.ts`.
 
-Stacks: `partways-data` (table, provider keys), `partways-auth` (Cognito email-code sign-in), `partways-hosting` (web app bucket with one folder per app, GitHub OIDC provider) and `partways-portal` (CloudFront, the streaming API at `/api/*`, and PARTWAYS-PORTAL's GitHub deploy role).
+PartWays runs in its own AWS account, **Stellrtek** (SSO profile `stellrtek`). Sign-in codes are the one exception: they are sent through the **m80** account's SES (SSO profile `wingtheidea`), which is out of the SES sandbox.
+
+| Stack | Account | What it holds |
+|---|---|---|
+| `partways-mailer` | m80, us-east-1 | The `partways.org` SES identity and `partways-ses-sender`, a send-only role for `no-reply@partways.org` that only `partways-auth-mailer` can assume |
+| `partways-dns` | Stellrtek, us-east-1 | `partways.org` records: DKIM, MAIL FROM (`bounce.partways.org`) and DMARC |
+| `partways-data` | Stellrtek | Table and provider keys |
+| `partways-auth` | Stellrtek | Cognito email-code sign-in; `createAuthChallenge` sends through m80 |
+| `partways-hosting` | Stellrtek | Web app bucket (one folder per app) and the GitHub OIDC provider |
+| `partways-portal` | Stellrtek | CloudFront, the streaming API at `/api/*`, and PARTWAYS-PORTAL's GitHub deploy role |
 
 The backend is deployed by hand, after committing and pushing this repository:
 
 ```bash
 cd infra
 npm install
-AWS_PROFILE=<partways-sso-profile> npx cdk bootstrap   # once per account and region
-AWS_PROFILE=<partways-sso-profile> npm run deploy
+AWS_PROFILE=wingtheidea npx cdk deploy partways-mailer
+# copy the DkimRecord outputs into DKIM_RECORDS in lib/account.ts, commit and push, then:
+AWS_PROFILE=stellrtek npx cdk bootstrap aws://720771544607/us-east-1   # once
+AWS_PROFILE=stellrtek npx cdk deploy partways-dns
+# with REGION set in lib/account.ts:
+AWS_PROFILE=stellrtek npx cdk bootstrap aws://720771544607/<region>    # once
+AWS_PROFILE=stellrtek npx cdk deploy partways-data partways-auth partways-hosting partways-portal
 ```
 
 The website is never uploaded from here: PARTWAYS-PORTAL releases it through GitHub Actions on push to `main`. Copy the `partways-portal` stack outputs `AwsDeployRoleArn`, `AwsRegion`, `S3Bucket`, `S3Prefix` and `CloudfrontDistributionId` into PARTWAYS-PORTAL's repository variables (`AWS_DEPLOY_ROLE_ARN`, `AWS_REGION`, `S3_BUCKET`, `S3_PREFIX`, `CLOUDFRONT_DISTRIBUTION_ID`).
