@@ -46,11 +46,15 @@ All dashboard numbers, assistant answers, reports and exports come from one func
 
 ## Deploy to AWS
 
-Prerequisites: AWS SAM CLI, AWS CLI credentials for the target account, and an SES-verified sender (in the SES sandbox, recipients must be verified too).
+Prerequisites: AWS SAM CLI, an SSO profile for the PartWays AWS account, and an SES-verified sender (in the SES sandbox, recipients must be verified too).
+
+The backend is deployed by hand, after committing and pushing this repository:
 
 ```bash
-SES_FROM=no-reply@yourdomain.com HR_ALLOWED=@yourdomain.com scripts/deploy.sh
+AWS_PROFILE=<partways-sso-profile> SES_FROM=no-reply@yourdomain.com HR_ALLOWED=@yourdomain.com scripts/deploy.sh
 ```
+
+The stack also creates the GitHub deploy role for PARTWAYS-PORTAL (and GitHub's OIDC provider; pass `CREATE_GITHUB_OIDC_PROVIDER=false` if the account already has one). The script prints the four repository variables to set in PARTWAYS-PORTAL. The website itself is released only by PARTWAYS-PORTAL's GitHub Actions workflow on push to `main`. For local development, `npm run dev` serves `../PARTWAYS-PORTAL`.
 
 Then put provider keys into the secret named in the `ProviderSecretsArn` output, as JSON:
 

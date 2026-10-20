@@ -1,22 +1,28 @@
 #!/usr/bin/env bash
-# Deploys the stack, uploads the static site and invalidates CloudFront.
-# Usage: SES_FROM=no-reply@example.com [HR_ALLOWED=@example.com] [STACK=partways] scripts/deploy.sh
+# Deploys the backend stack. The website is not uploaded here: PARTWAYS-PORTAL
+# releases it through GitHub Actions on push to main.
+# Commit and push PARTWAYS-BACKEND before running this.
+# Usage: AWS_PROFILE=<sso-profile> SES_FROM=no-reply@example.com [HR_ALLOWED=@example.com] [STACK=partways] scripts/deploy.sh
 set -euo pipefail
 cd "$(dirname "$0")/.."
-PORTAL="${PORTAL_DIR:-../PARTWAYS-PORTAL}"
 STACK="${STACK:-partways}"
+: "${AWS_PROFILE:?Set AWS_PROFILE to the PartWays SSO profile}"
 : "${SES_FROM:?Set SES_FROM to an SES-verified sender address}"
 
 npm ci --omit=dev
-sam deploy --stack-name "$STACK" --resolve-s3 --capabilities CAPABILITY_IAM --no-fail-on-empty-changeset \
-  --parameter-overrides "SesFromAddress=$SES_FROM" "HrAllowedEmails=${HR_ALLOWED:-}" "LlmProvider=${LLM_PROVIDER:-anthropic}"
+sam deploy --stack-name "$STACK" --resolve-s3 --capabilities CAPABILITY_IAM CAPABILITY_NAMED_IAM --no-fail-on-empty-changeset \
+  --parameter-overrides "SesFromAddress=$SES_FROM" "HrAllowedEmails=${HR_ALLOWED:-}" "LlmProvider=${LLM_PROVIDER:-anthropic}" \
+    "CreateGithubOidcProvider=${CREATE_GITHUB_OIDC_PROVIDER:-true}"
 
 out() { aws cloudformation describe-stacks --stack-name "$STACK" --query "Stacks[0].Outputs[?OutputKey=='$1'].OutputValue" --output text; }
-BUCKET=$(out SiteBucketName)
-DIST=$(out DistributionId)
-# A new version id on every deploy makes open pages offer a reload.
-echo "{\"version\":\"$(git rev-parse --short HEAD 2>/dev/null || echo build)-$(date +%s)\"}" > "$PORTAL/version.json"
-aws s3 sync "$PORTAL" "s3://$BUCKET" --delete --cache-control no-cache
-aws cloudfront create-invalidation --distribution-id "$DIST" --paths '/*' >/dev/null
 echo "Deployed: $(out SiteUrl)"
 echo "Provider keys go in: $(out ProviderSecretsArn)"
+echo
+echo "PARTWAYS-PORTAL repository variables (Settings > Secrets and variables > Actions > Variables):"
+for k in AwsDeployRoleArn AwsRegion S3Bucket CloudfrontDistributionId; do
+  case $k in
+    AwsDeployRoleArn) n=AWS_DEPLOY_ROLE_ARN ;; AwsRegion) n=AWS_REGION ;;
+    S3Bucket) n=S3_BUCKET ;; CloudfrontDistributionId) n=CLOUDFRONT_DISTRIBUTION_ID ;;
+  esac
+  printf '  %-28s %s\n' "$n" "$(out $k)"
+done

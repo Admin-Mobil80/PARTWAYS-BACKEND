@@ -25,6 +25,19 @@ Parameters:
     Default: '0'
     Description: Set to 1 only if your ElevenLabs plan includes zero-retention mode.
 
+  GithubOrg:
+    Type: String
+    Default: Admin-Mobil80
+    Description: GitHub organisation that holds PARTWAYS-PORTAL. Its deploy workflow assumes the role below.
+  CreateGithubOidcProvider:
+    Type: String
+    AllowedValues: ['true', 'false']
+    Default: 'true'
+    Description: IAM allows one GitHub OIDC provider per account. Set to false if this account already has one.
+
+Conditions:
+  CreateOidcProvider: !Equals [!Ref CreateGithubOidcProvider, 'true']
+
 Globals:
   Function:
     Runtime: nodejs22.x
@@ -265,6 +278,55 @@ Resources:
             OriginRequestPolicyId: b689b0a8-53d0-40ab-baf2-68738e2966ac   # AllViewerExceptHostHeader
             ResponseHeadersPolicyId: !Ref SecurityHeaders
 
+  # --- GitHub Actions deploy for PARTWAYS-PORTAL ---------------------------------
+  # The website is released only by the PARTWAYS-PORTAL workflow on push to main.
+  # It signs in with GitHub's OIDC token, so no AWS keys are stored in GitHub.
+  GithubOidcProvider:
+    Type: AWS::IAM::OIDCProvider
+    Condition: CreateOidcProvider
+    Properties:
+      Url: https://token.actions.githubusercontent.com
+      ClientIdList: [sts.amazonaws.com]
+
+  PortalDeployRole:
+    Type: AWS::IAM::Role
+    Properties:
+      RoleName: !Sub '${AWS::StackName}-portal-github-deploy'
+      Description: GitHub Actions deploy role for PARTWAYS-PORTAL (main only)
+      MaxSessionDuration: 3600
+      AssumeRolePolicyDocument:
+        Version: '2012-10-17'
+        Statement:
+          - Effect: Allow
+            Principal:
+              Federated: !If
+                - CreateOidcProvider
+                - !Ref GithubOidcProvider
+                - !Sub 'arn:aws:iam::${AWS::AccountId}:oidc-provider/token.actions.githubusercontent.com'
+            Action: sts:AssumeRoleWithWebIdentity
+            Condition:
+              StringEquals: { 'token.actions.githubusercontent.com:aud': sts.amazonaws.com }
+              # One branch, one environment: main only. The second form covers an
+              # organisation that adds numeric ids to the OIDC subject claim.
+              StringLike:
+                'token.actions.githubusercontent.com:sub':
+                  - !Sub 'repo:${GithubOrg}/PARTWAYS-PORTAL:ref:refs/heads/main'
+                  - !Sub 'repo:${GithubOrg}@*/PARTWAYS-PORTAL@*:ref:refs/heads/main'
+      Policies:
+        - PolicyName: deploy-site
+          PolicyDocument:
+            Version: '2012-10-17'
+            Statement:
+              - Effect: Allow
+                Action: s3:ListBucket
+                Resource: !GetAtt SiteBucket.Arn
+              - Effect: Allow
+                Action: [s3:GetObject, s3:PutObject, s3:DeleteObject]
+                Resource: !Sub '${SiteBucket.Arn}/*'
+              - Effect: Allow
+                Action: [cloudfront:CreateInvalidation, cloudfront:GetInvalidation]
+                Resource: !Sub 'arn:aws:cloudfront::${AWS::AccountId}:distribution/${Distribution}'
+
 Outputs:
   SiteUrl:
     Value: !Sub 'https://${Distribution.DomainName}'
@@ -277,3 +339,16 @@ Outputs:
     Value: !Ref ProviderSecrets
   TableName:
     Value: !Ref Table
+  # Repository variables for PARTWAYS-PORTAL (Settings > Secrets and variables > Actions > Variables).
+  AwsDeployRoleArn:
+    Description: Repo variable AWS_DEPLOY_ROLE_ARN in PARTWAYS-PORTAL
+    Value: !GetAtt PortalDeployRole.Arn
+  AwsRegion:
+    Description: Repo variable AWS_REGION in PARTWAYS-PORTAL
+    Value: !Ref AWS::Region
+  S3Bucket:
+    Description: Repo variable S3_BUCKET in PARTWAYS-PORTAL
+    Value: !Ref SiteBucket
+  CloudfrontDistributionId:
+    Description: Repo variable CLOUDFRONT_DISTRIBUTION_ID in PARTWAYS-PORTAL
+    Value: !Ref Distribution
