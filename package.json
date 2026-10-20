@@ -23,5 +23,8 @@
     "aws-jwt-verify": "^5.2.1",
     "pdfkit": "^0.20.2",
     "stripe": "^19.3.0"
+  },
+  "devDependencies": {
+    "esbuild": "^0.25.12"
   }
 }

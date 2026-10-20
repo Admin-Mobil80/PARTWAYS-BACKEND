@@ -1,0 +1,24 @@
+{
+  "name": "partways-infra",
+  "version": "0.1.0",
+  "private": true,
+  "description": "PartWays AWS infrastructure: CDK app (the only sanctioned way PartWays resources are created)",
+  "scripts": {
+    "build": "tsc",
+    "synth": "cdk synth",
+    "diff": "cdk diff --all",
+    "deploy": "cdk deploy --all",
+    "test": "tsc --noEmit"
+  },
+  "dependencies": {
+    "aws-cdk-lib": "^2",
+    "constructs": "^10.0.0"
+  },
+  "devDependencies": {
+    "@types/node": "^22",
+    "aws-cdk": "^2.1136.0",
+    "esbuild": "^0.25",
+    "ts-node": "^10.9.2",
+    "typescript": "~5.6.3"
+  }
+}

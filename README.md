@@ -46,25 +46,30 @@ All dashboard numbers, assistant answers, reports and exports come from one func
 
 ## Deploy to AWS
 
-Prerequisites: AWS SAM CLI, an SSO profile for the PartWays AWS account, and an SES-verified sender (in the SES sandbox, recipients must be verified too).
+All PartWays AWS resources come from the CDK app in `infra/`; nothing is created by hand. PartWays has its own AWS account, reached through SSO. The account id, region, SES sender and other settings live in `infra/lib/account.ts`.
+
+Stacks: `partways-data` (table, provider keys), `partways-auth` (Cognito email-code sign-in), `partways-hosting` (web app bucket with one folder per app, GitHub OIDC provider) and `partways-portal` (CloudFront, the streaming API at `/api/*`, and PARTWAYS-PORTAL's GitHub deploy role).
 
 The backend is deployed by hand, after committing and pushing this repository:
 
 ```bash
-AWS_PROFILE=<partways-sso-profile> SES_FROM=no-reply@yourdomain.com HR_ALLOWED=@yourdomain.com scripts/deploy.sh
+cd infra
+npm install
+AWS_PROFILE=<partways-sso-profile> npx cdk bootstrap   # once per account and region
+AWS_PROFILE=<partways-sso-profile> npm run deploy
 ```
 
-The stack also creates the GitHub deploy role for PARTWAYS-PORTAL (and GitHub's OIDC provider; pass `CREATE_GITHUB_OIDC_PROVIDER=false` if the account already has one). The script prints the four repository variables to set in PARTWAYS-PORTAL. The website itself is released only by PARTWAYS-PORTAL's GitHub Actions workflow on push to `main`. For local development, `npm run dev` serves `../PARTWAYS-PORTAL`.
+The website is never uploaded from here: PARTWAYS-PORTAL releases it through GitHub Actions on push to `main`. Copy the `partways-portal` stack outputs `AwsDeployRoleArn`, `AwsRegion`, `S3Bucket`, `S3Prefix` and `CloudfrontDistributionId` into PARTWAYS-PORTAL's repository variables (`AWS_DEPLOY_ROLE_ARN`, `AWS_REGION`, `S3_BUCKET`, `S3_PREFIX`, `CLOUDFRONT_DISTRIBUTION_ID`).
 
-Then put provider keys into the secret named in the `ProviderSecretsArn` output, as JSON:
+Then put provider keys into the secret named in the `partways-data` output `ProviderSecretsArn`, as JSON, keeping the generated `AUTH_SECRET`:
 
 ```json
-{ "ANTHROPIC_API_KEY": "…", "DEEPGRAM_API_KEY": "…", "ELEVENLABS_API_KEY": "…", "STRIPE_SECRET_KEY": "sk_test_…", "STRIPE_WEBHOOK_SECRET": "whsec_…" }
+{ "AUTH_SECRET": "(keep)", "ANTHROPIC_API_KEY": "…", "DEEPGRAM_API_KEY": "…", "ELEVENLABS_API_KEY": "…", "STRIPE_SECRET_KEY": "sk_test_…", "STRIPE_WEBHOOK_SECRET": "whsec_…" }
 ```
 
 In Stripe, add a webhook endpoint at `https://<site>/api/stripe/webhook` for `checkout.session.completed`.
 
-Deepgram and ElevenLabs are optional; without them the browser’s own speech services are used. With `LlmProvider=bedrock`, no Anthropic key is needed but the account needs Bedrock access to the Claude model. Each organisation's demo workspace is created the first time it is opened.
+Deepgram and ElevenLabs are optional; without them the browser’s own speech services are used. With `LLM_PROVIDER = 'bedrock'`, no Anthropic key is needed but the account needs Bedrock access to the Claude model. Each organisation's demo workspace is created the first time it is opened.
 
 ## Notes for evaluators
 
