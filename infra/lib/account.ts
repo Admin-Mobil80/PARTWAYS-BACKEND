@@ -6,7 +6,7 @@
  * active credentials happen to point at. See README for the deploy commands.
  */
 export const ACCOUNT = '720771544607'; // Stellrtek, via SSO profile 'stellrtek'
-export const REGION = ''; // TODO: e.g. ap-south-1
+export const REGION = 'us-east-1';
 
 /** Every PartWays resource name starts with this. */
 export const PREFIX = 'partways';
@@ -64,11 +64,12 @@ export const DKIM_RECORDS: ReadonlyArray<{ readonly name: string; readonly value
 export const HR_ALLOWED_EMAILS = '';
 
 /**
- * anthropic: ANTHROPIC_API_KEY from the provider secret.
- * bedrock: this account's Amazon Bedrock access, no key needed.
- * offline: rule-based fallbacks only.
+ * Empty: Anthropic once ANTHROPIC_API_KEY is in the provider secret, the
+ * labelled offline mode until then.
+ * anthropic / bedrock / offline: force one (bedrock uses this account's
+ * Amazon Bedrock access, no key needed).
  */
-export const LLM_PROVIDER: 'anthropic' | 'bedrock' | 'offline' = 'anthropic';
+export const LLM_PROVIDER: '' | 'anthropic' | 'bedrock' | 'offline' = '';
 
 /** Empty uses the code's default (claude-opus-5-5, or its Bedrock id). */
 export const LLM_MODEL = '';
