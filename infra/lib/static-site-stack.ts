@@ -1,14 +1,17 @@
 import * as cdk from 'aws-cdk-lib';
+import * as acm from 'aws-cdk-lib/aws-certificatemanager';
 import * as cloudfront from 'aws-cdk-lib/aws-cloudfront';
 import * as origins from 'aws-cdk-lib/aws-cloudfront-origins';
 import * as cloudwatch from 'aws-cdk-lib/aws-cloudwatch';
 import * as iam from 'aws-cdk-lib/aws-iam';
 import * as lambda from 'aws-cdk-lib/aws-lambda';
 import type { NodejsFunction } from 'aws-cdk-lib/aws-lambda-nodejs';
+import * as route53 from 'aws-cdk-lib/aws-route53';
+import * as targets from 'aws-cdk-lib/aws-route53-targets';
 import * as s3 from 'aws-cdk-lib/aws-s3';
 import * as secretsmanager from 'aws-cdk-lib/aws-secretsmanager';
 import { Construct } from 'constructs';
-import { PREFIX } from './account';
+import { HOSTED_ZONE_ID, PREFIX, ZONE_NAME } from './account';
 import { backendFunction } from './functions';
 
 export interface StaticSiteStackProps extends cdk.StackProps {
@@ -22,8 +25,10 @@ export interface StaticSiteStackProps extends cdk.StackProps {
   readonly sitePrefix: string;
   /** GitHub's OIDC provider in this account. */
   readonly githubOidcProviderArn: string;
-  /** The app's API, served from this distribution at /api/*. */
-  readonly api: SiteApiProps;
+  /** Public hostnames in the partways.org zone; the first is the canonical one. */
+  readonly domainNames: string[];
+  /** The app's API, served from this distribution at /api/*. Omitted until the app has one. */
+  readonly api?: SiteApiProps;
 }
 
 export interface SiteApiProps {
@@ -36,16 +41,33 @@ export interface SiteApiProps {
 
 /**
  * One web app: a CloudFront distribution serving a folder of the hosting
- * bucket, its streaming API at /api/* on the same origin, and the GitHub
- * Actions deploy role for exactly one repo and one folder.
+ * bucket at its own hostnames, its streaming API at /api/* on the same origin
+ * (once it has one), and the GitHub Actions deploy role for exactly one repo
+ * and one folder.
  */
 export class StaticSiteStack extends cdk.Stack {
-  public readonly apiFunction: NodejsFunction;
+  public readonly apiFunction?: NodejsFunction;
 
   constructor(scope: Construct, id: string, props: StaticSiteStackProps) {
     super(scope, id, props);
 
-    const { appName, githubRepo, sitePrefix } = props;
+    const { appName, githubRepo, sitePrefix, domainNames } = props;
+
+    // CloudFront only accepts certificates from us-east-1, which is where
+    // PartWays runs, so the certificate lives in this stack.
+    if (this.region !== 'us-east-1') {
+      throw new Error(`${id}: the certificate must be in us-east-1 for CloudFront; move it to its own stack to deploy elsewhere`);
+    }
+    const zone = route53.HostedZone.fromHostedZoneAttributes(this, 'Zone', {
+      hostedZoneId: HOSTED_ZONE_ID,
+      zoneName: ZONE_NAME,
+    });
+    const certificate = new acm.Certificate(this, 'Certificate', {
+      domainName: domainNames[0]!,
+      subjectAlternativeNames: domainNames.slice(1),
+      certificateName: domainNames[0]!,
+      validation: acm.CertificateValidation.fromDns(zone),
+    });
 
     // Imported by name: the bucket's policy belongs to the hosting stack and
     // already lets every CloudFront distribution in this account read it.
@@ -82,7 +104,10 @@ export class StaticSiteStack extends cdk.Stack {
     );
 
     const distribution = new cloudfront.Distribution(this, 'SiteDistribution', {
-      comment: `${PREFIX}-${appName}`,
+      comment: `${PREFIX}-${appName} (${domainNames.join(', ')})`,
+      domainNames,
+      certificate,
+      minimumProtocolVersion: cloudfront.SecurityPolicyProtocol.TLS_V1_2_2021,
       defaultRootObject: 'index.html',
       httpVersion: cloudfront.HttpVersion.HTTP2_AND_3,
       defaultBehavior: {
@@ -122,7 +147,14 @@ function handler(event) {
       },
     });
 
-    this.apiFunction = this.addApi(distribution, appName, securityHeaders, props.api);
+    if (props.api) this.apiFunction = this.addApi(distribution, appName, securityHeaders, props.api);
+
+    const aliasTarget = route53.RecordTarget.fromAlias(new targets.CloudFrontTarget(distribution));
+    domainNames.forEach((recordName, i) => {
+      const suffix = i === 0 ? '' : `${i + 1}`;
+      new route53.ARecord(this, `AliasRecord${suffix}`, { zone, recordName, target: aliasTarget });
+      new route53.AaaaRecord(this, `AliasRecordV6${suffix}`, { zone, recordName, target: aliasTarget });
+    });
 
     // There is one branch and one environment, so the role trusts main only.
     // The second subject form covers an organisation that adds numeric ids to
@@ -181,7 +213,8 @@ function handler(event) {
       value: distribution.distributionId,
       description: `Repo variable CLOUDFRONT_DISTRIBUTION_ID in ${githubRepo}`,
     });
-    new cdk.CfnOutput(this, 'SiteUrl', { value: `https://${distribution.distributionDomainName}` });
+    new cdk.CfnOutput(this, 'SiteUrl', { value: `https://${domainNames[0]}` });
+    new cdk.CfnOutput(this, 'CloudfrontUrl', { value: `https://${distribution.distributionDomainName}` });
   }
 
   /**

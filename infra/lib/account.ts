@@ -81,9 +81,13 @@ export const ELEVENLABS_ZERO_RETENTION: '0' | '1' = '0';
  * Hosting bucket for the PartWays web apps, laid out by folder:
  *
  *   webapps.partways.org/
- *     PORTAL/   -> the website (home, /hr/, /interview/)
- *     BMS/      -> the back-office, when it exists
+ *     PORTAL/   -> the website (partways.org: home, /hr/, /interview/)
+ *     BMS/      -> the back-office (bms.partways.org)
  */
 export const WEBAPPS_BUCKET_NAME = 'webapps.partways.org';
 export const PORTAL_PREFIX = 'PORTAL';
+/** The website's hostnames; the first is canonical. */
+export const PORTAL_DOMAINS = [ZONE_NAME, `www.${ZONE_NAME}`];
+/** The back-office, for the PartWays team. */
+export const BMS_DOMAINS = [`bms.${ZONE_NAME}`];
 export const BMS_PREFIX = 'BMS';

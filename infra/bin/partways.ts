@@ -3,6 +3,8 @@ import * as cdk from 'aws-cdk-lib';
 import * as iam from 'aws-cdk-lib/aws-iam';
 import {
   ACCOUNT,
+  BMS_DOMAINS,
+  BMS_PREFIX,
   DNS_REGION,
   ELEVENLABS_ZERO_RETENTION,
   GITHUB_OWNER,
@@ -11,6 +13,7 @@ import {
   LLM_PROVIDER,
   MAIL_ACCOUNT,
   MAIL_REGION,
+  PORTAL_DOMAINS,
   PORTAL_PREFIX,
   PREFIX,
   REGION,
@@ -87,6 +90,7 @@ function appStacks(env: cdk.Environment): cdk.Stack[] {
     githubRepo: `${GITHUB_OWNER}/PARTWAYS-PORTAL`,
     bucketName: WEBAPPS_BUCKET_NAME,
     sitePrefix: PORTAL_PREFIX,
+    domainNames: PORTAL_DOMAINS,
     githubOidcProviderArn: hosting.githubOidcProviderArn,
     api: {
       file: 'api',
@@ -120,5 +124,18 @@ function appStacks(env: cdk.Environment): cdk.Stack[] {
     },
   });
 
-  return [data, auth, hosting, portal];
+  // The back-office has no API yet; it gets one when its first feature needs it.
+  const bms = new StaticSiteStack(app, 'partways-bms', {
+    env,
+    stackName: `${PREFIX}-bms`,
+    description: 'PartWays BMS: CloudFront for the back-office and its GitHub Actions deploy role',
+    appName: 'bms',
+    githubRepo: `${GITHUB_OWNER}/PARTWAYS-BMS`,
+    bucketName: WEBAPPS_BUCKET_NAME,
+    sitePrefix: BMS_PREFIX,
+    domainNames: BMS_DOMAINS,
+    githubOidcProviderArn: hosting.githubOidcProviderArn,
+  });
+
+  return [data, auth, hosting, portal, bms];
 }
