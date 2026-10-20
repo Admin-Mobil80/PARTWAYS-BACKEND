@@ -51,7 +51,11 @@ export const DNS_REGION = 'us-east-1';
  * SES issues the DKIM records only once partways-mailer has created the
  * identity in m80. Copy its DkimRecord outputs here, then deploy partways-dns.
  */
-export const DKIM_RECORDS: ReadonlyArray<{ readonly name: string; readonly value: string }> = [];
+export const DKIM_RECORDS: ReadonlyArray<{ readonly name: string; readonly value: string }> = [
+  { name: 'gpzt66uehv3rv6nirtuyhfsjwsim7nis._domainkey.partways.org', value: 'gpzt66uehv3rv6nirtuyhfsjwsim7nis.dkim.amazonses.com' },
+  { name: '7pojywgmkvoezxm4vsp2vjl22t43mh6i._domainkey.partways.org', value: '7pojywgmkvoezxm4vsp2vjl22t43mh6i.dkim.amazonses.com' },
+  { name: 'cobdw243xtppopvmvt4zbugia7uhmfex._domainkey.partways.org', value: 'cobdw243xtppopvmvt4zbugia7uhmfex.dkim.amazonses.com' },
+];
 
 /**
  * Optional comma-separated emails or @domains allowed to sign up and sign in.
