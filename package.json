@@ -1,0 +1,27 @@
+{
+  "name": "partways",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "description": "PartWays: independent AI exit-interview service (MLP prototype)",
+  "scripts": {
+    "dev": "node scripts/dev-server.js",
+    "seed": "node scripts/seed.js",
+    "test": "node --test test/*.test.js"
+  },
+  "engines": {
+    "node": ">=20"
+  },
+  "dependencies": {
+    "@anthropic-ai/bedrock-sdk": "^0.35.0",
+    "@anthropic-ai/sdk": "^0.135.0",
+    "@aws-sdk/client-cognito-identity-provider": "^3.1153.0",
+    "@aws-sdk/client-dynamodb": "^3.1153.0",
+    "@aws-sdk/client-secrets-manager": "^3.1153.0",
+    "@aws-sdk/client-sesv2": "^3.1153.0",
+    "@aws-sdk/lib-dynamodb": "^3.1153.0",
+    "aws-jwt-verify": "^5.2.1",
+    "pdfkit": "^0.20.2",
+    "stripe": "^19.3.0"
+  }
+}

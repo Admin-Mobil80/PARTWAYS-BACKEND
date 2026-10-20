@@ -1,0 +1,279 @@
+AWSTemplateFormatVersion: '2010-09-09'
+Transform: AWS::Serverless-2016-10-31
+Description: PartWays exit interviews. Static site on S3 + CloudFront, one streaming Lambda API, DynamoDB, Cognito email-code sign-in via SES.
+
+Parameters:
+  SesFromAddress:
+    Type: String
+    Description: SES-verified sender for 6-digit sign-in codes, for example no-reply@yourdomain.com
+  HrAllowedEmails:
+    Type: String
+    Default: ''
+    Description: Optional comma-separated emails or @domains allowed to sign up and sign in. Leave empty to allow free sign-up for anyone.
+  LlmProvider:
+    Type: String
+    AllowedValues: [anthropic, bedrock, offline]
+    Default: anthropic
+    Description: anthropic uses ANTHROPIC_API_KEY from the secret; bedrock uses this account's Amazon Bedrock access.
+  LlmModel:
+    Type: String
+    Default: ''
+    Description: Optional model override. Defaults to claude-opus-5-5 (anthropic) or anthropic.claude-opus-5-5 (bedrock).
+  ElevenLabsZeroRetention:
+    Type: String
+    AllowedValues: ['0', '1']
+    Default: '0'
+    Description: Set to 1 only if your ElevenLabs plan includes zero-retention mode.
+
+Globals:
+  Function:
+    Runtime: nodejs22.x
+    Architectures: [arm64]
+    MemorySize: 1024
+    Timeout: 60
+
+Resources:
+  # --- Data ---------------------------------------------------------------
+  Table:
+    Type: AWS::DynamoDB::Table
+    Properties:
+      BillingMode: PAY_PER_REQUEST
+      AttributeDefinitions:
+        - { AttributeName: PK, AttributeType: S }
+        - { AttributeName: SK, AttributeType: S }
+      KeySchema:
+        - { AttributeName: PK, KeyType: HASH }
+        - { AttributeName: SK, KeyType: RANGE }
+      TimeToLiveSpecification: { AttributeName: ttl, Enabled: true }
+      PointInTimeRecoverySpecification: { PointInTimeRecoveryEnabled: true }
+      SSESpecification: { SSEEnabled: true }
+
+  # Provider keys as one JSON object, e.g. {"ANTHROPIC_API_KEY":"…","DEEPGRAM_API_KEY":"…","ELEVENLABS_API_KEY":"…",
+  # "STRIPE_SECRET_KEY":"sk_test_…","STRIPE_WEBHOOK_SECRET":"whsec_…","AUTH_SECRET":"…"}.
+  # Created empty; set its value in the console or with `aws secretsmanager put-secret-value`.
+  ProviderSecrets:
+    Type: AWS::SecretsManager::Secret
+    Properties:
+      Description: PartWays provider API keys
+      GenerateSecretString:
+        SecretStringTemplate: '{}'
+        GenerateStringKey: AUTH_SECRET
+        PasswordLength: 48
+        ExcludePunctuation: true
+
+  OriginSecret:
+    Type: AWS::SecretsManager::Secret
+    Properties:
+      Description: Shared header value between CloudFront and the API function URL
+      GenerateSecretString: { PasswordLength: 40, ExcludePunctuation: true }
+
+  # --- Sign-in: Cognito custom auth with a 6-digit code sent by SES -----------
+  AuthTriggers:
+    Type: AWS::Serverless::Function
+    Properties:
+      CodeUri: .
+      Handler: src/handlers/auth-triggers.defineAuthChallenge
+      Timeout: 10
+      Environment:
+        Variables:
+          SES_FROM_ADDRESS: !Ref SesFromAddress
+      Policies:
+        - Statement:
+            - Effect: Allow
+              Action: ses:SendEmail
+              Resource: '*'
+
+  CreateChallengeFn:
+    Type: AWS::Serverless::Function
+    Properties:
+      CodeUri: .
+      Handler: src/handlers/auth-triggers.createAuthChallenge
+      Timeout: 10
+      Environment:
+        Variables:
+          SES_FROM_ADDRESS: !Ref SesFromAddress
+      Policies:
+        - Statement:
+            - Effect: Allow
+              Action: ses:SendEmail
+              Resource: '*'
+
+  VerifyChallengeFn:
+    Type: AWS::Serverless::Function
+    Properties:
+      CodeUri: .
+      Handler: src/handlers/auth-triggers.verifyAuthChallenge
+      Timeout: 10
+
+  UserPool:
+    Type: AWS::Cognito::UserPool
+    Properties:
+      UsernameConfiguration: { CaseSensitive: false }
+      AdminCreateUserConfig: { AllowAdminCreateUserOnly: true }
+      AccountRecoverySetting:
+        RecoveryMechanisms: [{ Name: admin_only, Priority: 1 }]
+      LambdaConfig:
+        DefineAuthChallenge: !GetAtt AuthTriggers.Arn
+        CreateAuthChallenge: !GetAtt CreateChallengeFn.Arn
+        VerifyAuthChallengeResponse: !GetAtt VerifyChallengeFn.Arn
+
+  UserPoolClient:
+    Type: AWS::Cognito::UserPoolClient
+    Properties:
+      UserPoolId: !Ref UserPool
+      GenerateSecret: false
+      ExplicitAuthFlows: [ALLOW_CUSTOM_AUTH, ALLOW_REFRESH_TOKEN_AUTH]
+      IdTokenValidity: 8
+      TokenValidityUnits: { IdToken: hours }
+      PreventUserExistenceErrors: ENABLED
+
+  DefinePermission:
+    Type: AWS::Lambda::Permission
+    Properties: { Action: lambda:InvokeFunction, FunctionName: !Ref AuthTriggers, Principal: cognito-idp.amazonaws.com, SourceArn: !GetAtt UserPool.Arn }
+  CreatePermission:
+    Type: AWS::Lambda::Permission
+    Properties: { Action: lambda:InvokeFunction, FunctionName: !Ref CreateChallengeFn, Principal: cognito-idp.amazonaws.com, SourceArn: !GetAtt UserPool.Arn }
+  VerifyPermission:
+    Type: AWS::Lambda::Permission
+    Properties: { Action: lambda:InvokeFunction, FunctionName: !Ref VerifyChallengeFn, Principal: cognito-idp.amazonaws.com, SourceArn: !GetAtt UserPool.Arn }
+
+  # --- API: one streaming function behind CloudFront --------------------------
+  ApiFunction:
+    Type: AWS::Serverless::Function
+    Properties:
+      CodeUri: .
+      Handler: src/handlers/api.handler
+      Timeout: 120
+      FunctionUrlConfig:
+        AuthType: NONE
+        InvokeMode: RESPONSE_STREAM
+      Environment:
+        Variables:
+          TABLE_NAME: !Ref Table
+          COGNITO_USER_POOL_ID: !Ref UserPool
+          COGNITO_CLIENT_ID: !Ref UserPoolClient
+          HR_ALLOWED_EMAILS: !Ref HrAllowedEmails
+          LLM_PROVIDER: !Ref LlmProvider
+          LLM_MODEL: !Ref LlmModel
+          ELEVENLABS_ZERO_RETENTION: !Ref ElevenLabsZeroRetention
+          SECRETS_ARN: !Ref ProviderSecrets
+          ORIGIN_VERIFY: !Sub '{{resolve:secretsmanager:${OriginSecret}:SecretString}}'
+      Policies:
+        - DynamoDBCrudPolicy: { TableName: !Ref Table }
+        - Statement:
+            - Effect: Allow
+              Action: secretsmanager:GetSecretValue
+              Resource: !Ref ProviderSecrets
+            - Effect: Allow
+              Action: [cognito-idp:AdminGetUser, cognito-idp:AdminCreateUser]
+              Resource: !GetAtt UserPool.Arn
+            - Effect: Allow
+              Action: [bedrock:InvokeModel, bedrock:InvokeModelWithResponseStream]
+              Resource: '*'
+
+  # --- Static site ------------------------------------------------------------
+  SiteBucket:
+    Type: AWS::S3::Bucket
+    Properties:
+      PublicAccessBlockConfiguration: { BlockPublicAcls: true, BlockPublicPolicy: true, IgnorePublicAcls: true, RestrictPublicBuckets: true }
+      BucketEncryption:
+        ServerSideEncryptionConfiguration: [{ ServerSideEncryptionByDefault: { SSEAlgorithm: AES256 } }]
+
+  SiteOac:
+    Type: AWS::CloudFront::OriginAccessControl
+    Properties:
+      OriginAccessControlConfig: { Name: !Sub '${AWS::StackName}-site', OriginAccessControlOriginType: s3, SigningBehavior: always, SigningProtocol: sigv4 }
+
+  SiteBucketPolicy:
+    Type: AWS::S3::BucketPolicy
+    Properties:
+      Bucket: !Ref SiteBucket
+      PolicyDocument:
+        Statement:
+          - Effect: Allow
+            Principal: { Service: cloudfront.amazonaws.com }
+            Action: s3:GetObject
+            Resource: !Sub '${SiteBucket.Arn}/*'
+            Condition:
+              StringEquals: { 'AWS:SourceArn': !Sub 'arn:aws:cloudfront::${AWS::AccountId}:distribution/${Distribution}' }
+
+  # /hr/ and /interview/ are folders with an index.html.
+  IndexRewrite:
+    Type: AWS::CloudFront::Function
+    Properties:
+      Name: !Sub '${AWS::StackName}-index'
+      AutoPublish: true
+      FunctionConfig: { Comment: Serve index.html for folder paths, Runtime: cloudfront-js-2.0 }
+      FunctionCode: |
+        function handler(event) {
+          var r = event.request;
+          if (r.uri.endsWith('/')) r.uri += 'index.html';
+          else if (r.uri.indexOf('.') === -1) r.uri += '/index.html';
+          return r;
+        }
+
+  SecurityHeaders:
+    Type: AWS::CloudFront::ResponseHeadersPolicy
+    Properties:
+      ResponseHeadersPolicyConfig:
+        Name: !Sub '${AWS::StackName}-security'
+        SecurityHeadersConfig:
+          StrictTransportSecurity: { AccessControlMaxAgeSec: 31536000, IncludeSubdomains: true, Override: true }
+          ContentTypeOptions: { Override: true }
+          FrameOptions: { FrameOption: DENY, Override: true }
+          ReferrerPolicy: { ReferrerPolicy: strict-origin-when-cross-origin, Override: true }
+        CustomHeadersConfig:
+          Items:
+            - { Header: Permissions-Policy, Value: 'microphone=(self), camera=()', Override: true }
+
+  Distribution:
+    Type: AWS::CloudFront::Distribution
+    Properties:
+      DistributionConfig:
+        Enabled: true
+        HttpVersion: http2and3
+        DefaultRootObject: index.html
+        Origins:
+          - Id: site
+            DomainName: !GetAtt SiteBucket.RegionalDomainName
+            OriginAccessControlId: !GetAtt SiteOac.Id
+            S3OriginConfig: { OriginAccessIdentity: '' }
+          - Id: api
+            DomainName: !Select [2, !Split ['/', !GetAtt ApiFunctionUrl.FunctionUrl]]
+            CustomOriginConfig: { OriginProtocolPolicy: https-only, OriginReadTimeout: 60 }
+            OriginCustomHeaders:
+              - { HeaderName: x-origin-verify, HeaderValue: !Sub '{{resolve:secretsmanager:${OriginSecret}:SecretString}}' }
+        DefaultCacheBehavior:
+          TargetOriginId: site
+          ViewerProtocolPolicy: redirect-to-https
+          CachePolicyId: 658327ea-f89d-4fab-a63d-7e88639e58f6   # CachingOptimized
+          ResponseHeadersPolicyId: !Ref SecurityHeaders
+          Compress: true
+          FunctionAssociations:
+            - { EventType: viewer-request, FunctionARN: !GetAtt IndexRewrite.FunctionMetadata.FunctionARN }
+        CacheBehaviors:
+          - PathPattern: /version.json
+            TargetOriginId: site
+            ViewerProtocolPolicy: redirect-to-https
+            CachePolicyId: 4135ea2d-6df8-44a3-9df3-4b5a84be39ad   # CachingDisabled
+            ResponseHeadersPolicyId: !Ref SecurityHeaders
+          - PathPattern: /api/*
+            TargetOriginId: api
+            ViewerProtocolPolicy: https-only
+            AllowedMethods: [GET, HEAD, OPTIONS, PUT, POST, PATCH, DELETE]
+            CachePolicyId: 4135ea2d-6df8-44a3-9df3-4b5a84be39ad   # CachingDisabled
+            OriginRequestPolicyId: b689b0a8-53d0-40ab-baf2-68738e2966ac   # AllViewerExceptHostHeader
+            ResponseHeadersPolicyId: !Ref SecurityHeaders
+
+Outputs:
+  SiteUrl:
+    Value: !Sub 'https://${Distribution.DomainName}'
+  SiteBucketName:
+    Value: !Ref SiteBucket
+  DistributionId:
+    Value: !Ref Distribution
+  ProviderSecretsArn:
+    Description: Put provider keys here as JSON.
+    Value: !Ref ProviderSecrets
+  TableName:
+    Value: !Ref Table
