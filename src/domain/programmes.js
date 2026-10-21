@@ -7,7 +7,7 @@ export const DEFAULT_MESSAGES = {
   reminder: 'Hi, a reminder that your PartWays exit interview ({interviewId}) for {org} is open until {deadline}. You can take part, or decline, here: {link}',
 };
 
-export const feedbackNoticeFor = (orgShort) => `PartWays keeps a written transcript and the summary you approve. Audio is used only to run the live conversation and is not kept as a recording. Your feedback is de-identified: ${orgShort} sees it under a PartWays Interview Id, never with your name or mobile number, and names, phone numbers and email addresses are removed from what you say. Reviewed feedback is combined with other responses for reporting. Removing a point before you submit removes it from what is shared.`;
+export const feedbackNoticeFor = (orgShort) => `PartWays keeps a written transcript and the summary you approve. Audio is used only to run the live conversation and is not kept as a recording. Your feedback is de-identified: ${orgShort} sees it under a PartWays Interview Id, never with your name, email address or mobile number, and names, phone numbers and email addresses are removed from what you say. Reviewed feedback is combined with other responses for reporting. Removing a point before you submit removes it from what is shared.`;
 
 export const followUpWordingFor = (orgShort) => `If you would like someone from the ${orgShort} People Team to contact you, you can request this at any time. This is the only time your feedback is linked to you, and only if you ask. Requesting contact is separate from submitting your feedback.`;
 

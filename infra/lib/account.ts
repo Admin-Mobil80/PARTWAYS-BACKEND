@@ -29,14 +29,19 @@ export const CREATE_GITHUB_OIDC_PROVIDER = true;
  * m80 SSO profile (wingtheidea), everything else with 'stellrtek'.
  */
 export const SES_FROM_ADDRESS = 'no-reply@partways.org';
+/** Sender for interview invitations and reminders. */
+export const INVITE_FROM_ADDRESS = 'invitations@partways.org';
 export const MAIL_DOMAIN = 'partways.org';
 /** Custom MAIL FROM, so SPF aligns with partways.org. */
 export const MAIL_FROM_DOMAIN = `bounce.${MAIL_DOMAIN}`;
 export const MAIL_ACCOUNT = '231427841372'; // m80
 export const MAIL_REGION = 'us-east-1';
-/** The send-only role in m80, and the only role in this account allowed to assume it. */
+/** The send-only role in m80, and the only roles in this account allowed to assume it. */
 export const MAIL_SENDER_ROLE_NAME = 'partways-ses-sender';
+/** The sign-in code functions (both user pools). */
 export const AUTH_MAILER_ROLE_NAME = 'partways-auth-mailer';
+/** The website API, which sends interview invitations and reminders. */
+export const PORTAL_API_ROLE_NAME = 'partways-portal-api';
 
 /**
  * The partways.org public hosted zone, in the PartWays account. Route 53 is

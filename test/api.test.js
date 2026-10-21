@@ -267,6 +267,36 @@ test('participants: duplicate mobile numbers are rejected and sends are simulate
   assert.equal(detail.participant.summary, undefined);
 });
 
+test('participants: invited by email, WhatsApp or both, on every channel they have', async () => {
+  const byEmail = await hr('POST', '/api/hr/participants', { programmeId: 'prog_general', email: 'Leaver@Example.com' });
+  assert.equal(byEmail.participant.email, 'l•••@example.com', 'the full email is never returned');
+  assert.equal(byEmail.participant.mobile, null);
+  assert.deepEqual(byEmail.participant.channels, ['email']);
+  assert.equal((await call('POST', '/api/hr/participants', { programmeId: 'prog_general', email: 'leaver@example.com' })).status, 409, 'duplicate email, any case');
+  assert.equal((await call('POST', '/api/hr/participants', { programmeId: 'prog_general' })).status, 400, 'email or mobile is required');
+  assert.equal((await call('POST', '/api/hr/participants', { programmeId: 'prog_general', email: 'not-an-email' })).status, 400);
+
+  const both = await hr('POST', '/api/hr/participants', { programmeId: 'prog_general', email: 'both@example.com', mobile: '+44 7700 900556' });
+  assert.deepEqual(both.participant.channels, ['email', 'whatsapp']);
+  assert.equal(both.participant.invitation.channel, 'Email and WhatsApp');
+
+  const preview = await hr('GET', `/api/hr/participants/${both.participant.id}/message?kind=invitation`);
+  assert.deepEqual(preview.messages.map((m) => m.channel), ['email', 'whatsapp']);
+  assert.ok(preview.messages[0].subject.includes('has asked PartWays'));
+  assert.ok(preview.messages.every((m) => m.text.includes(both.participant.interviewId)));
+
+  const sent = await hr('POST', `/api/hr/participants/${both.participant.id}/send`, { kind: 'invitation' });
+  assert.deepEqual(sent.deliveries.map((d) => d.channel), ['email', 'whatsapp']);
+  assert.equal(sent.simulated, true, 'nothing is delivered from the demonstration workspace');
+  assert.match(sent.message, /demonstration workspace/);
+  const reminder = await hr('POST', `/api/hr/participants/${both.participant.id}/send`, { kind: 'reminder' });
+  assert.deepEqual(reminder.participant.invitation.reminders[0].channels, ['email', 'whatsapp']);
+
+  const csv = 'email,mobile,business unit\nmix@example.com,,Sales\n,+44 7700 900557,Ops\nmix@example.com,,Sales\n,,Ops';
+  const check = await hr('POST', '/api/hr/participants/import/validate', { programmeId: 'prog_general', csv });
+  assert.deepEqual(check.rows.map((r) => r.status), ['ok', 'ok', 'duplicate', 'error']);
+});
+
 test('actions require reasons to close and notes to complete', async () => {
   const { action } = await hr('POST', '/api/hr/actions', { title: 'T', owner: 'O', outcome: 'X' });
   assert.equal((await call('POST', `/api/hr/actions/${action.id}/status`, { status: 'closed' })).status, 400);

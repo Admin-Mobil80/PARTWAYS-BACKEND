@@ -9,12 +9,15 @@ import {
   DNS_REGION,
   ELEVENLABS_ZERO_RETENTION,
   GITHUB_OWNER,
+  INVITE_FROM_ADDRESS,
   HR_ALLOWED_EMAILS,
   LLM_MODEL,
   LLM_PROVIDER,
   MAIL_ACCOUNT,
   MAIL_REGION,
+  MAIL_SENDER_ROLE_NAME,
   PORTAL_DOMAINS,
+  PORTAL_API_ROLE_NAME,
   PORTAL_PREFIX,
   PREFIX,
   REGION,
@@ -65,6 +68,8 @@ for (const stack of stacks) {
 }
 
 function appStacks(env: cdk.Environment): cdk.Stack[] {
+  const senderRoleArn = `arn:aws:iam::${MAIL_ACCOUNT}:role/${MAIL_SENDER_ROLE_NAME}`;
+
   const data = new DataStack(app, 'partways-data', {
     env,
     stackName: `${PREFIX}-data`,
@@ -95,7 +100,13 @@ function appStacks(env: cdk.Environment): cdk.Stack[] {
     githubOidcProviderArn: hosting.githubOidcProviderArn,
     api: {
       file: 'api',
+      // m80's send-only role trusts this role by name, for invitation emails.
+      roleName: PORTAL_API_ROLE_NAME,
       environment: {
+        SES_ROLE_ARN: senderRoleArn,
+        SES_REGION: MAIL_REGION,
+        INVITE_FROM_ADDRESS,
+        SITE_URL: `https://${PORTAL_DOMAINS[0]}`,
         TABLE_NAME: data.table.tableName,
         SECRETS_ARN: data.providerSecrets.secretArn,
         COGNITO_USER_POOL_ID: auth.userPool.userPoolId,
@@ -108,6 +119,7 @@ function appStacks(env: cdk.Environment): cdk.Stack[] {
       grant: (fn) => {
         data.table.grantReadWriteData(fn);
         data.providerSecrets.grantRead(fn);
+        fn.addToRolePolicy(new iam.PolicyStatement({ actions: ['sts:AssumeRole'], resources: [senderRoleArn] }));
         // Creates an organisation's people on sign-up and team changes; cannot delete anyone.
         fn.addToRolePolicy(
           new iam.PolicyStatement({

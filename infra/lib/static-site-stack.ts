@@ -37,6 +37,8 @@ export interface SiteApiProps {
   readonly environment: Record<string, string>;
   /** Grant the function what it needs (table, secrets, pool, ...). */
   readonly grant: (fn: NodejsFunction) => void;
+  /** A fixed execution role name, when another account must trust the function by name. */
+  readonly roleName?: string;
 }
 
 /**
@@ -238,7 +240,16 @@ function handler(event) {
     // never appears in the template.
     const originVerify = originSecret.secretValue.unsafeUnwrap();
 
+    const role = config.roleName
+      ? new iam.Role(this, 'ApiRole', {
+        roleName: config.roleName,
+        description: `${PREFIX}-${appName}-api`,
+        assumedBy: new iam.ServicePrincipal('lambda.amazonaws.com'),
+        managedPolicies: [iam.ManagedPolicy.fromAwsManagedPolicyName('service-role/AWSLambdaBasicExecutionRole')],
+      })
+      : undefined;
     const fn = backendFunction(this, 'ApiFunction', {
+      role,
       name: `${appName}-api`,
       file: config.file,
       handler: 'handler',

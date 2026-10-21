@@ -8,9 +8,11 @@ import { Construct } from 'constructs';
 import {
   ACCOUNT,
   AUTH_MAILER_ROLE_NAME,
+  INVITE_FROM_ADDRESS,
   MAIL_DOMAIN,
   MAIL_FROM_DOMAIN,
   MAIL_SENDER_ROLE_NAME,
+  PORTAL_API_ROLE_NAME,
   PREFIX,
   SES_FROM_ADDRESS,
 } from './account';
@@ -73,14 +75,14 @@ export class MailerStack extends cdk.Stack {
       mailFromBehaviorOnMxFailure: ses.MailFromBehaviorOnMxFailure.USE_DEFAULT_VALUE,
     });
 
-    // Trusted by account, narrowed to one role by aws:PrincipalArn: naming the
-    // role as the principal would fail until it exists in the PartWays account.
+    // Trusted by account, narrowed to two roles by aws:PrincipalArn: naming the
+    // roles as principals would fail until they exist in the PartWays account.
     const senderRole = new iam.Role(this, 'SenderRole', {
       roleName: MAIL_SENDER_ROLE_NAME,
-      description: `Lets ${AUTH_MAILER_ROLE_NAME} in ${ACCOUNT} send PartWays sign-in codes as ${SES_FROM_ADDRESS}`,
+      description: `Lets ${AUTH_MAILER_ROLE_NAME} and ${PORTAL_API_ROLE_NAME} in ${ACCOUNT} send PartWays email as ${SES_FROM_ADDRESS} or ${INVITE_FROM_ADDRESS}`,
       maxSessionDuration: cdk.Duration.hours(1),
       assumedBy: new iam.AccountPrincipal(ACCOUNT).withConditions({
-        ArnEquals: { 'aws:PrincipalArn': `arn:aws:iam::${ACCOUNT}:role/${AUTH_MAILER_ROLE_NAME}` },
+        ArnEquals: { 'aws:PrincipalArn': [AUTH_MAILER_ROLE_NAME, PORTAL_API_ROLE_NAME].map((r) => `arn:aws:iam::${ACCOUNT}:role/${r}`) },
       }),
     });
     senderRole.addToPolicy(
@@ -92,7 +94,7 @@ export class MailerStack extends cdk.Stack {
           `arn:aws:ses:${this.region}:${this.account}:identity/${MAIL_DOMAIN}`,
           `arn:aws:ses:${this.region}:${this.account}:configuration-set/${configurationSet.configurationSetName}`,
         ],
-        conditions: { StringEquals: { 'ses:FromAddress': SES_FROM_ADDRESS } },
+        conditions: { StringEquals: { 'ses:FromAddress': [SES_FROM_ADDRESS, INVITE_FROM_ADDRESS] } },
       }),
     );
 
