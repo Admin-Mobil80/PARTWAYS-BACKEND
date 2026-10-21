@@ -1,7 +1,7 @@
 // Participation administration. These routes never return interview content.
 // People are de-identified: the HR workspace knows each person by their PartWays
 // Interview Id and a masked email address and/or mobile number. The full contact
-// details are only used to send, and are shown only when the person asks to be contacted.
+// details are only used to send, and are never shown.
 // Invitations and reminders go to every channel a person has: email (sent through
 // SES) and WhatsApp (recorded, not delivered, until a WhatsApp account is connected).
 import { route, fail } from '../lib/http.js';
@@ -65,15 +65,12 @@ function opsView(p, sessions) {
   return {
     id: p.id, interviewId: p.interviewId, programmeId: p.programmeId, population: p.population,
     mobile: p.mobile ? maskMobile(p.mobile) : null, email: p.email ? maskEmail(p.email) : null, channels: channelsOf(p),
-    // Full contact details are shown only to follow up a contact request the person made themselves.
-    contactMobile: p.followUp ? p.mobile || null : undefined,
-    contactEmail: p.followUp ? p.email || null : undefined,
     businessUnit: p.businessUnit, function: p.function, location: p.location, tenureBand: p.tenureBand, roleLevel: p.roleLevel,
     departureDate: p.departureDate, preferredLanguage: p.preferredLanguage, status: p.status, declineReason: p.declineReason,
     invitation: { status: p.invitation.status, simulated: p.invitation.simulated, preparedAt: p.invitation.preparedAt, sentAt: p.invitation.sentAt,
       openedAt: p.invitation.openedAt, respondedAt: p.invitation.respondedAt, deadline: p.invitation.deadline, reminders: p.invitation.reminders,
       channel: channelText(channelsOf(p)), deliveries: (p.invitation.deliveries || []).map(({ channel, kind, at, simulated, failed }) => ({ channel, kind, at, simulated, failed })) },
-    followUp: p.followUp, linkRequests: p.linkRequests || [],
+    linkRequests: p.linkRequests || [],
     sessions: mine.map((s) => ({ id: s.id, status: s.status, mode: s.mode, modesUsed: s.modesUsed, initialMode: s.initialMode, startedAt: s.startedAt, submittedAt: s.submittedAt, guideVersion: s.guideVersion, language: s.language, revisions: (s.revisions || []).map((r) => ({ at: r.at, type: r.type })) })),
     createdAt: p.createdAt,
   };
@@ -83,8 +80,7 @@ route('GET', '/api/hr/participants', async (req) => {
   const [parts, sessions] = await Promise.all([store().list('participant'), store().list('session')]);
   const { programmeId, status, q, population } = req.query || {};
   let list = parts.filter((p) => (!programmeId || p.programmeId === programmeId) && (!population || p.population === population));
-  if (status === 'follow_up') list = list.filter((p) => p.followUp && p.followUp.status !== 'completed');
-  else if (status) list = list.filter((p) => p.status === status);
+  if (status) list = list.filter((p) => p.status === status);
   if (q) {
     const n = q.toLowerCase().replace(/\s/g, '');
     list = list.filter((p) => (p.interviewId || '').toLowerCase().replace(/-/g, '').includes(n.replace(/-/g, '')) || (n.length >= 3 && /^\d+$/.test(n) && (p.mobile || '').endsWith(n)) || (n.includes('@') && p.email === n) || (p.businessUnit || '').toLowerCase().replace(/\s/g, '').includes(n));
@@ -172,7 +168,7 @@ async function createParticipant(programme, clean, population) {
     departureDate: clean.departureDate, departureType: clean.departureType || 'voluntary', status: 'invited',
     invitation: { token: newToken(), status: 'prepared', simulated: true, preparedAt: nowIso(), sentAt: null, openedAt: null, respondedAt: null,
       deadline: new Date(Date.now() + 21 * 864e5).toISOString().slice(0, 10), reminders: [] },
-    followUp: null, declineReason: null, sessionIds: [], createdAt: nowIso(),
+    declineReason: null, sessionIds: [], createdAt: nowIso(),
   };
   await store().put('participant', p);
   return p;
@@ -317,17 +313,6 @@ route('POST', '/api/hr/participants/:id/cancel', async (req) => {
   if (p.status === 'submitted') fail(409, 'Feedback has been submitted, so the invitation cannot be cancelled.');
   p.invitation.status = 'cancelled';
   p.status = 'cancelled';
-  await store().put('participant', p);
-  return { participant: opsView(p, []) };
-}, { auth: true });
-
-route('POST', '/api/hr/participants/:id/follow-up', async (req) => {
-  const p = await must('participant', req.params.id, 'Participant');
-  const status = req.body?.status;
-  if (!['acknowledged', 'scheduled', 'completed'].includes(status)) fail(400, 'Choose acknowledged, scheduled or completed.');
-  if (!p.followUp) fail(409, 'No follow-up has been requested.');
-  p.followUp.status = status;
-  p.followUp.history = [...(p.followUp.history || []), { at: nowIso(), status, by: req.user.email, note: (req.body?.note || '').slice(0, 500) }];
   await store().put('participant', p);
   return { participant: opsView(p, []) };
 }, { auth: true });

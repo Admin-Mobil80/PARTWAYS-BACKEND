@@ -1,5 +1,5 @@
 import { DEFAULT_TOPICS } from './catalog.js';
-import { feedbackNoticeFor, followUpWordingFor } from './programmes.js';
+import { feedbackNoticeFor } from './programmes.js';
 
 const topic = (id, overrides = {}) => {
   const base = DEFAULT_TOPICS.find((t) => t.id === id);
@@ -11,7 +11,6 @@ const common = {
   modes: ['ai_voice', 'ai_text'],
   durations: ['quick', 'standard', 'in_depth'],
   reminder: { enabled: true, afterDays: 4, max: 2 },
-  followUpWording: followUpWordingFor('Calder & Finch'),
   feedbackNotice: feedbackNoticeFor('Calder & Finch'),
   completionMessage: 'Thank you for taking the time to share your experience. Your feedback has been submitted.',
 };

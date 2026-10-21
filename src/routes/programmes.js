@@ -18,12 +18,11 @@ async function programmeSummary(p, participants, sessions) {
   const mine = participants.filter((x) => x.programmeId === p.id && x.population !== 'preview');
   const status = {};
   for (const x of mine) status[x.status] = (status[x.status] || 0) + 1;
-  const followUps = mine.filter((x) => x.followUp && x.followUp.status !== 'completed').length;
   const processing = sessions.filter((s) => s.programmeId === p.id && s.status === 'submitted' && !s.summary).length;
   return {
     id: p.id, name: p.name, description: p.description, template: p.template, status: p.status,
     activeVersion: p.activeVersion, hasDraft: !!p.draft, reportingMode: p.reportingMode, objectives: p.objectives.length,
-    counts: { participants: mine.length, ...status }, followUps, processing, createdAt: p.createdAt,
+    counts: { participants: mine.length, ...status }, processing, createdAt: p.createdAt,
     demoParticipants: mine.filter((x) => x.population === 'demo').length, evaluationParticipants: mine.filter((x) => x.population === 'evaluation').length,
   };
 }
@@ -77,7 +76,7 @@ route('PUT', '/api/hr/programmes/:id/settings', async (req) => {
   const str = (v, max = 2000) => (v === undefined ? undefined : String(v).slice(0, max));
   const set = (k, v) => { if (v !== undefined) p[k] = v; };
   set('name', str(b.name, 120)); set('description', str(b.description, 500)); set('intro', str(b.intro));
-  set('completionMessage', str(b.completionMessage)); set('followUpWording', str(b.followUpWording)); set('feedbackNotice', str(b.feedbackNotice));
+  set('completionMessage', str(b.completionMessage)); set('feedbackNotice', str(b.feedbackNotice));
   if (Array.isArray(b.languages)) { const l = b.languages.filter((x) => LANGUAGES.some((y) => y.code === x)); if (!l.length) fail(400, 'Choose at least one language.'); p.languages = l; }
   if (Array.isArray(b.modes)) { const m = b.modes.filter((x) => ['ai_voice', 'ai_text'].includes(x)); if (!m.length) fail(400, 'Choose at least one interview format.'); p.modes = m; }
   if (Array.isArray(b.durations)) { const d = b.durations.filter((x) => DURATIONS[x]); if (!d.length) fail(400, 'Choose at least one interview length.'); p.durations = d; }

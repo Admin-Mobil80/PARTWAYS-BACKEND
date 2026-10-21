@@ -101,7 +101,7 @@ export function generateDemoData({ now = '2026-10-20T08:00:00Z' } = {}) {
         preparedAt: addDays(invitedAt, -1), sentAt: invitedAt, openedAt: null, respondedAt: null,
         deadline: addDays(invitedAt, 21).slice(0, 10), reminders: [],
       },
-      followUp: null, declineReason: null, sessionIds: [], createdAt: addDays(invitedAt, -1),
+      declineReason: null, sessionIds: [], createdAt: addDays(invitedAt, -1),
       ...extra,
     };
     participants.push(p);
@@ -207,7 +207,7 @@ export function generateDemoData({ now = '2026-10-20T08:00:00Z' } = {}) {
       updatedAt: submittedAt, submittedAt,
       summary: { points: iv.points, factors: iv.factors, noSingleMainReason: iv.noSingle, preventability: iv.preventability, finalComment: null },
       ratings: { ease: between(4, 5), heard: between(3, 5), accuracy: between(4, 5) },
-      followUpRequested: false, revisions: [], archetype,
+      revisions: [], archetype,
     };
     sessions.push(session);
     par.sessionIds.push(id);
@@ -260,7 +260,7 @@ export function generateDemoData({ now = '2026-10-20T08:00:00Z' } = {}) {
         coverage: { experience: 'explored' }, declinedTopics: [], activeMs: 4 * 60e3, startedAt, updatedAt: addDays(startedAt, 0.002),
         submittedAt: null,
         summary: draft ? { points: [{ id: 'pt_1', section: snip.section, text: snip.summary, themes: [snip.theme], sub: snip.sub, tone: snip.tone, origin: 'interviewer', status: 'kept', evidence: [{ turnId: 't2', kind: lang === 'en' ? 'quote' : 'translated_quote', text: snip.quote[lang] || snip.quote.en, lang, translation: lang === 'en' ? null : snip.quote.en }], mentions: 1, lang: 'en' }], factors: [{ theme: snip.theme, role: 'trigger', status: 'suggested', rank: null }], noSingleMainReason: false, preventability: 'not_discussed', finalComment: null } : null,
-        ratings: null, followUpRequested: false, revisions: [],
+        ratings: null, revisions: [],
       });
       p.sessionIds.push(sid);
       p.status = state === 'abandoned' ? 'in_progress' : draft ? 'awaiting_review' : 'in_progress';
@@ -281,11 +281,6 @@ export function generateDemoData({ now = '2026-10-20T08:00:00Z' } = {}) {
   for (const st of ['sent', 'sent', 'expired', 'declined']) nonResponder('prog_depots', 'Q3', st);
   for (const st of ['prepared', 'sent', 'sent']) nonResponder('prog_depots', 'Q4', st);
 
-  // Current-period follow-up requests.
-  const inProg = participants.filter((p) => p.programmeId === 'prog_general' && p.status === 'in_progress');
-  if (inProg[0]) inProg[0].followUp = { status: 'requested', requestedAt: '2026-10-16T14:20:00Z', note: 'Asked to be contacted about a concern raised during the conversation.', history: [] };
-  const sub = participants.filter((p) => p.programmeId === 'prog_general' && p.status === 'submitted' && !p.followUp);
-  sub[3].followUp = { status: 'acknowledged', requestedAt: sub[3].createdAt, note: 'Requested a call about final pay arrangements.', history: [] };
 
   // Correction case: as first submitted, pay was the confirmed main reason. A later
   // correction (applyLaterRevisions) makes progression the main reason.

@@ -31,7 +31,6 @@ function publicProgramme(programme, org) {
     modes: programme.modes, durations: programme.durations.map((d) => ({ id: d, ...DURATIONS[d] })),
     topics: guide.topics.filter((t) => !['experience', 'reasons', 'anything_else', 'preventability'].includes(t.id)).map((t) => ({ id: t.id, label: t.label })),
     feedbackNotice: programme.feedbackNotice, completionMessage: programme.completionMessage,
-    followUpWording: programme.followUpWording,
     org: { name: org.name, shortName: org.shortName, brandColor: org.brandColor, logoText: org.logoText || org.shortName, demo: !!org.demo },
   };
 }
@@ -44,7 +43,7 @@ export function employeeSession(s, programme, participant) {
     transcript: s.transcript.filter((t) => t.role !== 'event'),
     topics: plan.topics.map((t) => ({ id: t.id, label: t.label, status: s.coverage?.[t.id] || 'pending' })),
     activeMs: s.activeMs, summary: s.pendingCorrection || s.summary, pendingCorrection: !!s.pendingCorrection,
-    submittedAt: s.submittedAt, ratings: s.ratings, followUpRequested: s.followUpRequested, interviewId: s.interviewId || null,
+    submittedAt: s.submittedAt, ratings: s.ratings, interviewId: s.interviewId || null,
     revisions: s.revisions, preview: s.population === 'preview', seriousConcernFlagged: !!s.seriousConcernFlagged,
     themes: Object.fromEntries(Object.entries(THEMES).map(([k, v]) => [k, v.label])), sections: SECTIONS,
     liveModel: llmInfo().live,
@@ -86,7 +85,6 @@ route('GET', '/api/invite/:token', async (req) => {
     demo: !!org.demo,
     session: open ? { id: open.id, accessToken: open.accessToken, status: open.status, mode: open.mode } : null,
     submitted: done ? { id: done.id, accessToken: done.accessToken, submittedAt: done.submittedAt } : null,
-    followUp: p.followUp ? { status: p.followUp.status } : null,
     declineReason: p.declineReason || null,
   };
 });
@@ -120,14 +118,6 @@ route('POST', '/api/invite/:token/new-link', async (req) => {
   return { ok: true, message: 'Your request has been passed to the People Team, who can extend your invitation.' };
 });
 
-route('POST', '/api/invite/:token/follow-up', async (req) => {
-  const p = await findParticipantByToken(req.params.token);
-  if (!p) fail(404, 'Invitation not found.');
-  p.followUp = { status: 'requested', requestedAt: nowIso(), note: (req.body?.note || '').slice(0, 1000), history: [{ at: nowIso(), status: 'requested', by: 'employee' }] };
-  await store().put('participant', p);
-  return { ok: true, followUp: { status: 'requested' } };
-});
-
 async function createSession({ programme, participant, body, population, accessToken }) {
   const mode = ['ai_voice', 'ai_text'].includes(body.mode) ? body.mode : 'ai_text';
   const language = programme.languages.includes(body.language) ? body.language : programme.languages[0];
@@ -143,7 +133,7 @@ async function createSession({ programme, participant, body, population, accessT
     status: 'in_progress', phase: 'opening', currentTopic: null,
     transcript: [], coverage: {}, declinedTopics: [], events: [], activeMs: 0,
     startedAt: nowIso(), updatedAt: nowIso(), submittedAt: null, summary: null, ratings: null,
-    followUpRequested: false, revisions: [],
+    revisions: [],
   };
   await store().put('session', s);
   return s;
@@ -393,18 +383,6 @@ route('POST', '/api/session/:id/ratings', async (req) => {
   s.ratings = { ...(s.ratings || {}), ...r };
   await store().put('session', s);
   return { ok: true };
-});
-
-route('POST', '/api/session/:id/follow-up', async (req) => {
-  const { s, participant } = await loadSessionCtx(req);
-  s.followUpRequested = true;
-  s.events.push({ at: nowIso(), type: 'follow_up_requested' });
-  await store().put('session', s);
-  if (participant?.id) {
-    participant.followUp = { status: 'requested', requestedAt: nowIso(), note: (req.body?.note || '').slice(0, 1000), history: [{ at: nowIso(), status: 'requested', by: 'employee' }] };
-    await store().put('participant', participant);
-  }
-  return { ok: true, followUp: { status: 'requested' } };
 });
 
 export { createSession, publicProgramme, guideOf };
