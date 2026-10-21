@@ -27,7 +27,7 @@ npm run dev               # http://localhost:8787
 npm test
 ```
 
-Open http://localhost:8787 and create an organisation with the form on the home page, using any email. Locally the code is printed in the server console (or shown in the browser with `DEV_SHOW_OTP=1`). `npm run seed` clears local data. Without an `ANTHROPIC_API_KEY` the interviewer, summariser, plan proposals and assistant use rule-based fallbacks, and the UI says so.
+Open http://localhost:8787 and create an organisation with the form on the home page, using any email. Locally the code is printed in the server console (or shown in the browser with `DEV_SHOW_OTP=1`). `npm run seed` clears local data. Without an `OPENAI_API_KEY` the interviewer, summariser, plan proposals and assistant use rule-based fallbacks, and the UI says so.
 
 ## Architecture
 
@@ -37,7 +37,7 @@ Open http://localhost:8787 and create an organisation with the form on the home 
 | API (`src/handlers/api.js`, one Node.js function, NDJSON streaming for interview turns) | same handler in-process | Lambda function URL with response streaming, only reachable through CloudFront |
 | Data (single-table: `PK=NS#<workspace>`, `SK=<type>#<id>`) | `data/store.json` | DynamoDB, TTL on sign-in codes |
 | HR sign-in (6-digit email code) | HMAC token, code in console | Cognito custom auth, codes sent with SES |
-| Interviewer, summaries, plan proposals, assistant | Claude via the Anthropic API, or offline | Claude via the Anthropic API or Amazon Bedrock |
+| Interviewer, summaries, plan proposals, assistant | OpenAI `gpt-6.1-sol` (Responses API), or offline | OpenAI `gpt-6.1-sol` (Responses API) |
 | Speech | Browser speech recognition and synthesis | Optional Deepgram (STT) and ElevenLabs (TTS) |
 | Payments | Simulated without a key | Stripe Checkout (test or live key) and webhook |
 | Provider keys | `.env` | Secrets Manager, loaded at cold start |
@@ -79,12 +79,12 @@ The website is never uploaded from here: PARTWAYS-PORTAL releases it through Git
 Then put provider keys into the secret named in the `partways-data` output `ProviderSecretsArn`, as JSON, keeping the generated `AUTH_SECRET`:
 
 ```json
-{ "AUTH_SECRET": "(keep)", "ANTHROPIC_API_KEY": "…", "DEEPGRAM_API_KEY": "…", "ELEVENLABS_API_KEY": "…", "STRIPE_SECRET_KEY": "sk_test_…", "STRIPE_WEBHOOK_SECRET": "whsec_…" }
+{ "AUTH_SECRET": "(keep)", "OPENAI_API_KEY": "sk-…", "DEEPGRAM_API_KEY": "…", "ELEVENLABS_API_KEY": "…", "STRIPE_SECRET_KEY": "sk_test_…", "STRIPE_WEBHOOK_SECRET": "whsec_…" }
 ```
 
 In Stripe, add a webhook endpoint at `https://<site>/api/stripe/webhook` for `checkout.session.completed`.
 
-Deepgram and ElevenLabs are optional; without them the browser’s own speech services are used. With `LLM_PROVIDER = 'bedrock'`, no Anthropic key is needed but the account needs Bedrock access to the Claude model. Each organisation's demo workspace is created the first time it is opened.
+Deepgram and ElevenLabs are optional; without them the browser’s own speech services are used. Each organisation's demo workspace is created the first time it is opened.
 
 ## Notes for evaluators
 
@@ -98,10 +98,10 @@ Deepgram and ElevenLabs are optional; without them the browser’s own speech se
 - Browser speech recognition in Chrome sends audio to Google’s speech service; PartWays does not control its retention. The interview preparation screen says this.
 - Deepgram is called with `mip_opt_out=true` (excluded from model improvement). Deepgram may still keep audio briefly for operations under its own policy.
 - ElevenLabs request logging is only disabled when `ELEVENLABS_ZERO_RETENTION=1`, which requires a plan that supports it.
-- With the Anthropic API or Bedrock, transcripts are processed under that provider’s data terms.
+- With OpenAI, transcripts are processed under OpenAI’s API data terms (requests are sent with `store: false`).
 
 **Not verified in this environment**
 - Live voice (microphone capture, Deepgram streaming, ElevenLabs playback) needs a real browser with a microphone and keys. The text path, the streaming protocol and barge-in logic are exercised; the provider connections are not.
 - The AWS stack passes `cfn-lint` but has not been deployed.
 - Stripe Checkout and the webhook have not been run against a Stripe account; simulated purchases are tested.
-- The interviewer and assistant were tested in offline mode; quality with Claude needs a key.
+- The interviewer and assistant were tested in offline mode; quality with the OpenAI model needs a key.

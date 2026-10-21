@@ -127,12 +127,6 @@ function appStacks(env: cdk.Environment): cdk.Stack[] {
             resources: [auth.userPool.userPoolArn],
           }),
         );
-        fn.addToRolePolicy(
-          new iam.PolicyStatement({
-            actions: ['bedrock:InvokeModel', 'bedrock:InvokeModelWithResponseStream'],
-            resources: ['*'],
-          }),
-        );
       },
     },
   });

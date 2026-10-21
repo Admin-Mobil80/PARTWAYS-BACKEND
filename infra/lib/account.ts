@@ -69,15 +69,14 @@ export const DKIM_RECORDS: ReadonlyArray<{ readonly name: string; readonly value
 export const HR_ALLOWED_EMAILS = '';
 
 /**
- * Empty: Anthropic once ANTHROPIC_API_KEY is in the provider secret, the
- * labelled offline mode until then.
- * anthropic / bedrock / offline: force one (bedrock uses this account's
- * Amazon Bedrock access, no key needed).
+ * The AI interviewer, summaries, plan proposals and assistant use OpenAI.
+ * Empty: OpenAI once OPENAI_API_KEY is in the provider secret, the labelled
+ * offline mode until then. 'offline' forces the rule-based fallbacks.
  */
-export const LLM_PROVIDER: '' | 'anthropic' | 'bedrock' | 'offline' = '';
+export const LLM_PROVIDER: '' | 'offline' = '';
 
-/** Empty uses the code's default (claude-opus-5-5, or its Bedrock id). */
-export const LLM_MODEL = '';
+/** OpenAI model for all AI work. gpt-6-astra is the higher-quality, 5x-cost option. */
+export const LLM_MODEL = 'gpt-6.1-sol';
 
 /** '1' only if the ElevenLabs plan includes zero-retention mode. */
 export const ELEVENLABS_ZERO_RETENTION: '0' | '1' = '0';

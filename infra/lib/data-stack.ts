@@ -28,7 +28,7 @@ export class DataStack extends cdk.Stack {
       removalPolicy: cdk.RemovalPolicy.RETAIN,
     });
 
-    // Provider keys as one JSON object, e.g. {"ANTHROPIC_API_KEY":"…","DEEPGRAM_API_KEY":"…",
+    // Provider keys as one JSON object, e.g. {"OPENAI_API_KEY":"sk-…","DEEPGRAM_API_KEY":"…",
     // "ELEVENLABS_API_KEY":"…","STRIPE_SECRET_KEY":"sk_test_…","STRIPE_WEBHOOK_SECRET":"whsec_…"}.
     // Created with only AUTH_SECRET; add the rest in the console or with
     // `aws secretsmanager put-secret-value`, keeping AUTH_SECRET.

@@ -1,76 +1,79 @@
-// Language model access. Claude via the Anthropic API or Amazon Bedrock; without
-// credentials the app runs in a clearly labelled offline developer mode.
-import Anthropic from '@anthropic-ai/sdk';
-import { AnthropicBedrockMantle } from '@anthropic-ai/bedrock-sdk';
+// Language model access: OpenAI (Responses API). Without OPENAI_API_KEY the app
+// runs in a clearly labelled offline developer mode with rule-based fallbacks.
+import OpenAI from 'openai';
 
-let cached;
+export const DEFAULT_MODEL = 'gpt-6.1-sol';
+
+let cached, cachedKey;
 
 export function llmInfo() {
-  const provider = process.env.LLM_PROVIDER || (process.env.ANTHROPIC_API_KEY ? 'anthropic' : 'offline');
-  return {
-    provider,
-    live: provider !== 'offline',
-    model: process.env.LLM_MODEL || (provider === 'bedrock' ? 'anthropic.claude-opus-5-5' : 'claude-opus-5-5'),
-  };
+  const provider = process.env.LLM_PROVIDER || (process.env.OPENAI_API_KEY ? 'openai' : 'offline');
+  const live = provider === 'openai' && !!process.env.OPENAI_API_KEY;
+  return { provider: live ? 'openai' : 'offline', live, model: process.env.LLM_MODEL || DEFAULT_MODEL };
 }
 
+// Rebuilt if the key changes (keys are re-read from Secrets Manager every few minutes).
 function client() {
-  if (cached) return cached;
-  const info = llmInfo();
-  if (info.provider === 'bedrock') {
-    cached = { info, sdk: new AnthropicBedrockMantle({ awsRegion: process.env.BEDROCK_REGION || process.env.AWS_REGION || 'eu-west-1' }), beta: false };
-  } else if (info.provider === 'anthropic') {
-    cached = { info, sdk: new Anthropic(), beta: true };
-  } else {
-    cached = { info, sdk: null };
+  if (!cached || cachedKey !== process.env.OPENAI_API_KEY) {
+    cachedKey = process.env.OPENAI_API_KEY;
+    cached = new OpenAI({ apiKey: cachedKey });
   }
   return cached;
 }
 
 export class RefusalError extends Error {}
 
+// gpt-6.1-sol is a reasoning model: its output budget also covers reasoning
+// tokens, so the visible answer gets headroom above what the caller asked for.
+const REASONING_HEADROOM = 8000;
+
 function params({ system, messages, effort = 'medium', maxTokens = 16000, format }) {
-  const { info, beta } = client();
-  const p = {
-    model: info.model,
-    max_tokens: maxTokens,
-    system,
-    messages,
-    output_config: { effort, ...(format ? { format } : {}) },
+  return {
+    model: llmInfo().model,
+    instructions: system,
+    input: messages.map(({ role, content }) => ({ role, content })),
+    reasoning: { effort },
+    max_output_tokens: maxTokens + REASONING_HEADROOM,
+    store: false,
+    ...(format ? { text: { format } } : {}),
   };
-  // Server-side fallback re-runs a declined request on Anthropic's recommended model.
-  if (beta) Object.assign(p, { betas: ['server-side-fallback-2026-07-01'], fallbacks: 'default' });
-  return p;
 }
 
-function messagesApi() {
-  const { sdk, beta } = client();
-  return beta ? sdk.beta.messages : sdk.messages;
+// Runs one streamed response, passing text deltas to onText; resolves with the
+// full text. Refusals and cut-off answers are errors.
+async function run(p, onText) {
+  const stream = await client().responses.create({ ...p, stream: true });
+  let text = '', final = null;
+  for await (const event of stream) {
+    if (event.type === 'response.output_text.delta') {
+      text += event.delta;
+      onText?.(event.delta);
+    } else if (event.type === 'response.refusal.delta' || event.type === 'response.refusal.done') {
+      throw new RefusalError('The model declined this request.');
+    } else if (event.type === 'response.completed' || event.type === 'response.incomplete') {
+      final = event.response;
+    } else if (event.type === 'response.failed' || event.type === 'error') {
+      throw new Error(event.response?.error?.message || event.message || 'The model request failed.');
+    }
+  }
+  if (final?.status === 'incomplete') {
+    throw new Error(final.incomplete_details?.reason === 'max_output_tokens' ? 'Response was cut off before completion.' : 'The model stopped before finishing.');
+  }
+  return text;
 }
 
 // Streams text deltas to onText and resolves with the full text.
-export async function streamText(opts, onText) {
-  const stream = messagesApi().stream(params(opts));
-  let text = '';
-  for await (const event of stream) {
-    if (event.type === 'content_block_delta' && event.delta.type === 'text_delta') {
-      text += event.delta.text;
-      onText?.(event.delta.text);
-    }
-  }
-  const final = await stream.finalMessage();
-  if (final.stop_reason === 'refusal') throw new RefusalError('The model declined this request.');
-  return text;
+export function streamText(opts, onText) {
+  return run(params(opts), onText);
 }
 
 // Returns parsed JSON constrained to the given JSON schema.
 export async function generateJson({ system, messages, schema, effort = 'medium', maxTokens = 16000 }) {
-  const stream = messagesApi().stream(params({
-    system, messages, effort, maxTokens, format: { type: 'json_schema', schema },
+  const text = await run(params({
+    system, messages, effort, maxTokens,
+    // Not strict: strict mode would require every field and forbid optional ones,
+    // which the summary and plan schemas use.
+    format: { type: 'json_schema', name: 'result', schema, strict: false },
   }));
-  const final = await stream.finalMessage();
-  if (final.stop_reason === 'refusal') throw new RefusalError('The model declined this request.');
-  if (final.stop_reason === 'max_tokens') throw new Error('Response was cut off before completion.');
-  const text = final.content.filter((b) => b.type === 'text').map((b) => b.text).join('');
   return JSON.parse(text);
 }
