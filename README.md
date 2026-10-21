@@ -55,9 +55,10 @@ PartWays runs in its own AWS account, **Stellrtek** (SSO profile `stellrtek`). S
 | `partways-mailer` | m80, us-east-1 | The `partways.org` SES identity and `partways-ses-sender`, a send-only role for `no-reply@partways.org` that only `partways-auth-mailer` can assume |
 | `partways-dns` | Stellrtek, us-east-1 | `partways.org` records: DKIM, MAIL FROM (`bounce.partways.org`) and DMARC |
 | `partways-data` | Stellrtek | Table and provider keys |
-| `partways-auth` | Stellrtek | Cognito email-code sign-in; `createAuthChallenge` sends through m80 |
+| `partways-auth` | Stellrtek | Cognito email-code sign-in, one pool for the website and one for the BMS; the code emails go through m80 |
 | `partways-hosting` | Stellrtek | Web app bucket (one folder per app) and the GitHub OIDC provider |
-| `partways-portal` | Stellrtek | CloudFront, the streaming API at `/api/*`, and PARTWAYS-PORTAL's GitHub deploy role |
+| `partways-portal` | Stellrtek | CloudFront for partways.org, the website API at `/api/*`, and PARTWAYS-PORTAL's GitHub deploy role |
+| `partways-bms` | Stellrtek | CloudFront for bms.partways.org, the BMS API (`src/bms`, its own router and Cognito pool), and PARTWAYS-BMS's GitHub deploy role |
 
 The backend is deployed by hand, after committing and pushing this repository:
 
@@ -70,7 +71,7 @@ AWS_PROFILE=stellrtek npx cdk bootstrap aws://720771544607/us-east-1   # once
 AWS_PROFILE=stellrtek npx cdk deploy partways-dns
 # with REGION set in lib/account.ts:
 AWS_PROFILE=stellrtek npx cdk bootstrap aws://720771544607/<region>    # once
-AWS_PROFILE=stellrtek npx cdk deploy partways-data partways-auth partways-hosting partways-portal
+AWS_PROFILE=stellrtek npx cdk deploy partways-data partways-auth partways-hosting partways-portal partways-bms
 ```
 
 The website is never uploaded from here: PARTWAYS-PORTAL releases it through GitHub Actions on push to `main`. Copy the `partways-portal` stack outputs `AwsDeployRoleArn`, `AwsRegion`, `S3Bucket`, `S3Prefix` and `CloudfrontDistributionId` into PARTWAYS-PORTAL's repository variables (`AWS_DEPLOY_ROLE_ARN`, `AWS_REGION`, `S3_BUCKET`, `S3_PREFIX`, `CLOUDFRONT_DISTRIBUTION_ID`).

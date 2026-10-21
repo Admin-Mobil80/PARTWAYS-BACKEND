@@ -90,4 +90,6 @@ export const PORTAL_PREFIX = 'PORTAL';
 export const PORTAL_DOMAINS = [ZONE_NAME, `www.${ZONE_NAME}`];
 /** The back-office, for the PartWays team. */
 export const BMS_DOMAINS = [`bms.${ZONE_NAME}`];
+/** The BMS root account: always allowed to sign in, and the only one who can add or remove team members. */
+export const BMS_ROOT_EMAIL = 'riyad@mobil80.com';
 export const BMS_PREFIX = 'BMS';

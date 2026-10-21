@@ -4,6 +4,8 @@ import { SESv2Client, SendEmailCommand } from '@aws-sdk/client-sesv2';
 import { STSClient, AssumeRoleCommand } from '@aws-sdk/client-sts';
 
 const MAX_ATTEMPTS = 3;
+// 'PartWays' for the website, 'PartWays BMS' for the team's back-office.
+const PRODUCT = process.env.MAIL_PRODUCT || 'PartWays';
 
 // With SES_ROLE_ARN set, codes are sent through another account's SES by
 // assuming its send-only role. The SDK caches the credentials until they expire.
@@ -49,8 +51,8 @@ export async function create(event) {
       FromEmailAddress: process.env.SES_FROM_ADDRESS,
       Destination: { ToAddresses: [email] },
       Content: { Simple: {
-        Subject: { Data: `${code} is your PartWays sign-in code` },
-        Body: { Text: { Data: `Your PartWays sign-in code is ${code}.\n\nIt expires in a few minutes. If you did not try to sign in, you can ignore this email.` } },
+        Subject: { Data: `${code} is your ${PRODUCT} sign-in code` },
+        Body: { Text: { Data: `Your ${PRODUCT} sign-in code is ${code}.\n\nIt expires in a few minutes. If you did not try to sign in, you can ignore this email.` } },
       } },
     }));
   }

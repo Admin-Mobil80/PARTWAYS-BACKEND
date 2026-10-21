@@ -45,13 +45,4 @@ export async function handle(req) {
   return res;
 }
 
-export function encodeBody(body) {
-  if (Buffer.isBuffer(body)) return body;
-  if (typeof body === 'string') return Buffer.from(body);
-  return Buffer.from(JSON.stringify(body ?? {}));
-}
-
-export function contentTypeFor(res) {
-  const h = Object.fromEntries(Object.entries(res.headers || {}).map(([k, v]) => [k.toLowerCase(), v]));
-  return h['content-type'] || (typeof res.body === 'string' ? 'text/plain; charset=utf-8' : 'application/json');
-}
+export { encodeBody, contentTypeFor } from './http.js';

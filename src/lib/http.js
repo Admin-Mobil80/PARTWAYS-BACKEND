@@ -1,22 +1,14 @@
 // Minimal router shared by the Lambda handler and the local dev server.
 // A handler returns { status, body, headers } or { stream: async (write) => {} }.
 
-const routes = [];
-
 export class HttpError extends Error {
   constructor(status, message, details) { super(message); this.status = status; this.details = details; }
-}
-
-export function route(method, pattern, handler, opts = {}) {
-  const keys = [];
-  const re = new RegExp(`^${pattern.replace(/\//g, '\\/').replace(/:(\w+)/g, (_, k) => { keys.push(k); return '([^/]+)'; })}$`);
-  routes.push({ method, re, keys, handler, opts });
 }
 
 export const ok = (body, status = 200, headers = {}) => ({ status, body, headers });
 export const fail = (status, message, details) => { throw new HttpError(status, message, details); };
 
-export async function dispatch(req, { authenticate }) {
+async function dispatchIn(routes, req, { authenticate }) {
   for (const r of routes) {
     if (r.method !== req.method) continue;
     const m = req.path.match(r.re);
@@ -39,4 +31,33 @@ export async function dispatch(req, { authenticate }) {
     }
   }
   return { status: 404, body: { error: 'Not found' } };
+}
+
+// One router per API: the website's (below) and the BMS's (src/bms), so neither
+// can reach the other's routes.
+export function createRouter() {
+  const routes = [];
+  return {
+    route(method, pattern, handler, opts = {}) {
+      const keys = [];
+      const re = new RegExp(`^${pattern.replace(/\//g, '\\/').replace(/:(\w+)/g, (_, k) => { keys.push(k); return '([^/]+)'; })}$`);
+      routes.push({ method, re, keys, handler, opts });
+    },
+    dispatch: (req, ctx) => dispatchIn(routes, req, ctx),
+  };
+}
+
+const website = createRouter();
+export const route = website.route;
+export const dispatch = website.dispatch;
+
+export function encodeBody(body) {
+  if (Buffer.isBuffer(body)) return body;
+  if (typeof body === 'string') return Buffer.from(body);
+  return Buffer.from(JSON.stringify(body ?? {}));
+}
+
+export function contentTypeFor(res) {
+  const h = Object.fromEntries(Object.entries(res.headers || {}).map(([k, v]) => [k.toLowerCase(), v]));
+  return h['content-type'] || (typeof res.body === 'string' ? 'text/plain; charset=utf-8' : 'application/json');
 }

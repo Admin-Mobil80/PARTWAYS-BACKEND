@@ -5,6 +5,7 @@ import {
   ACCOUNT,
   BMS_DOMAINS,
   BMS_PREFIX,
+  BMS_ROOT_EMAIL,
   DNS_REGION,
   ELEVENLABS_ZERO_RETENTION,
   GITHUB_OWNER,
@@ -124,17 +125,36 @@ function appStacks(env: cdk.Environment): cdk.Stack[] {
     },
   });
 
-  // The back-office has no API yet; it gets one when its first feature needs it.
+  // The back-office for the PartWays team: organisations, credits, team, audit log.
   const bms = new StaticSiteStack(app, 'partways-bms', {
     env,
     stackName: `${PREFIX}-bms`,
-    description: 'PartWays BMS: CloudFront for the back-office and its GitHub Actions deploy role',
+    description: 'PartWays BMS: CloudFront for the back-office, its API, and its GitHub Actions deploy role',
     appName: 'bms',
     githubRepo: `${GITHUB_OWNER}/PARTWAYS-BMS`,
     bucketName: WEBAPPS_BUCKET_NAME,
     sitePrefix: BMS_PREFIX,
     domainNames: BMS_DOMAINS,
     githubOidcProviderArn: hosting.githubOidcProviderArn,
+    api: {
+      file: 'bms-api',
+      environment: {
+        TABLE_NAME: data.table.tableName,
+        BMS_USER_POOL_ID: auth.bmsUserPool.userPoolId,
+        BMS_CLIENT_ID: auth.bmsClient.userPoolClientId,
+        BMS_ROOT_EMAIL,
+      },
+      grant: (fn) => {
+        data.table.grantReadWriteData(fn);
+        // Creates a team member's sign-in on first use; cannot delete anyone.
+        fn.addToRolePolicy(
+          new iam.PolicyStatement({
+            actions: ['cognito-idp:AdminGetUser', 'cognito-idp:AdminCreateUser'],
+            resources: [auth.bmsUserPool.userPoolArn],
+          }),
+        );
+      },
+    },
   });
 
   return [data, auth, hosting, portal, bms];

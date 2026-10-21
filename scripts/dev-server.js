@@ -1,4 +1,5 @@
-// Local development server: serves the static frontend and the API from one port.
+// Local development server: serves a static frontend and its API from one port.
+// `npm run dev` is the website (../PARTWAYS-PORTAL); `npm run dev:bms` the BMS (../PARTWAYS-BMS).
 import http from 'node:http';
 import fs from 'node:fs';
 import path from 'node:path';
@@ -10,11 +11,16 @@ for (const line of (fs.existsSync(path.join(root, '.env')) ? fs.readFileSync(pat
   const m = line.match(/^\s*([A-Z0-9_]+)\s*=\s*(.*)\s*$/);
   if (m && process.env[m[1]] === undefined) process.env[m[1]] = m[2].replace(/^"|"$/g, '');
 }
-const { handle, encodeBody, contentTypeFor } = await import('../src/lib/app.js');
+const BMS = process.env.SITE === 'bms';
+const { encodeBody, contentTypeFor } = await import('../src/lib/http.js');
+const { handle } = await import(BMS ? '../src/bms/app.js' : '../src/lib/app.js');
+if (BMS) process.env.BMS_ROOT_EMAIL ||= 'riyad@mobil80.com';
 
-const PORT = Number(process.env.PORT || 8787);
-// The static site lives in the sibling PARTWAYS-PORTAL folder.
-const STATIC = path.resolve(process.env.PORTAL_DIR || path.join(root, '..', 'PARTWAYS-PORTAL'));
+const PORT = Number(process.env.PORT || (BMS ? 8788 : 8787));
+// The static sites live in the sibling PARTWAYS-PORTAL and PARTWAYS-BMS folders.
+const STATIC = path.resolve(BMS
+  ? process.env.BMS_DIR || path.join(root, '..', 'PARTWAYS-BMS')
+  : process.env.PORTAL_DIR || path.join(root, '..', 'PARTWAYS-PORTAL'));
 const TYPES = { '.html': 'text/html; charset=utf-8', '.js': 'text/javascript; charset=utf-8', '.css': 'text/css; charset=utf-8', '.svg': 'image/svg+xml', '.json': 'application/json', '.png': 'image/png', '.ico': 'image/x-icon', '.mp3': 'audio/mpeg' };
 
 async function readBody(req) {
@@ -84,4 +90,6 @@ http.createServer(async (req, res) => {
     if (!res.headersSent) res.writeHead(500, { 'content-type': 'application/json' });
     res.end(JSON.stringify({ error: 'Server error' }));
   }
-}).listen(PORT, () => console.log(`PartWays running at http://localhost:${PORT}  (HR workspace: /hr/  ·  employee interview: /interview/)`));
+}).listen(PORT, () => console.log(BMS
+  ? `PartWays BMS running at http://localhost:${PORT}  (root: ${process.env.BMS_ROOT_EMAIL})`
+  : `PartWays running at http://localhost:${PORT}  (HR workspace: /hr/  ·  employee interview: /interview/)`));
