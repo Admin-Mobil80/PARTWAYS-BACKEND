@@ -1,7 +1,7 @@
 // The AI interviewer. One function, runTurn, drives both voice and text interviews:
 // it streams the spoken reply and then updates the session's coverage state.
 import { DURATIONS, TEMPLATES, TIER_ORDER, LANGUAGES, THEMES } from './catalog.js';
-import { llmInfo, streamText } from '../llm/index.js';
+import { llmInfo, streamText, generateJson } from '../llm/index.js';
 import { offlineTurn } from './offline.js';
 
 const MARKER = '###STATE###';
@@ -26,7 +26,7 @@ How you converse:
 - Never infer honesty, personality, mental health or emotion from how someone sounds.
 - Never invent company policies, promise investigations or make commitments for the organisation. If the employee wants someone to act on something or contact them, say briefly that PartWays only records their feedback and cannot pass on requests, and that they can raise it directly with the organisation; then continue the interview.
 - Keep the interview de-identified. Never ask for the employee's name, contact details or anything else that identifies them. If they name other people, do not repeat the names; refer to roles instead ("your manager", "a colleague").
-- If the employee raises a serious concern (for example harassment, discrimination, safety, or wrongdoing), acknowledge it without interrogating or judging, mention that they can request contact with the organisation's HR team using the on-screen "Request contact" option, and ask whether they would like to continue.
+- If the employee raises a serious concern (for example harassment, discrimination, safety, or wrongdoing), acknowledge it without interrogating or judging, say that PartWays cannot act on it but they can raise it directly with the organisation, and ask whether they would like to continue.
 - If you did not understand something (unclear words, possible transcription error), ask for clarification instead of guessing.
 - Adapt depth to the chosen length. In a quick interview, cover the essentials only; ask before going beyond the time the employee chose.
 - Before ending, ask whether anything important was missed. When the employee has nothing to add, thank them briefly and explain that they will now see a summary they can review and correct before anything is submitted.
@@ -199,3 +199,61 @@ export async function runTurn({ session, programme, org, participant, employeeTe
 export function themeLabels() {
   return Object.fromEntries(Object.entries(THEMES).map(([k, v]) => [k, v.label]));
 }
+
+// --- Live voice (OpenAI Realtime) ---------------------------------------------
+// In a live voice interview the browser talks to a speech-to-speech model directly.
+// It gets the same rules and plan as the text interviewer, without the state marker:
+// progress is tracked separately after each interviewer turn (trackProgress).
+
+const VOICE_RULES = `${RULES.slice(0, RULES.indexOf('\n\nOutput format, exactly:'))}
+
+You are speaking live with the employee by voice. Talk as you would in a real conversation: natural, brief, one question at a time. The employee can interrupt you at any time; when they do, stop and listen. Never read out lists or structure.`;
+
+export function realtimeInstructions({ session, programme, org, participant }) {
+  const lines = [VOICE_RULES, '', contextBlock(session, programme, org, participant), ''];
+  const prior = (session.transcript || []).filter((t) => t.role === 'interviewer' || t.role === 'employee');
+  if (prior.length) {
+    lines.push('The conversation so far. Continue from here: do not restart, do not introduce yourself again, and do not ask the employee to repeat anything.');
+    for (const t of prior.slice(-40)) lines.push(`${t.role === 'interviewer' ? 'Interviewer' : 'Employee'}: ${t.text}`);
+    lines.push('', 'Begin by saying in one sentence where the conversation had reached, then ask the next useful question.');
+  } else {
+    lines.push(`Begin as soon as the conversation starts. ${eventNote({ type: 'start' })}`);
+  }
+  return lines.join('\n');
+}
+
+const PROGRESS_RULES = `You track the progress of a live exit interview between an AI interviewer and a departing employee. You do not speak to anyone. From the topics and the conversation, return:
+- coverage: only topics whose status should change. "explored" when the employee has meaningfully addressed it (wherever it came up), "insufficient" when touched on only briefly, "skipped" when the interviewer or employee moved past it, "declined" when the employee did not want to discuss it.
+- current_topic: the topic id being discussed now, or null.
+- phase: "opening", "exploring", "closing_check" (the interviewer has asked whether anything was missed), or "ended" only when the interviewer has closed the interview after the employee confirmed there is nothing more to add.
+- serious_concern: true if the employee raised harassment, discrimination, safety or wrongdoing.`;
+
+const PROGRESS_SCHEMA = {
+  type: 'object',
+  additionalProperties: false,
+  required: ['coverage', 'current_topic', 'phase', 'serious_concern'],
+  properties: {
+    coverage: { type: 'object', additionalProperties: { type: 'string', enum: ['explored', 'insufficient', 'skipped', 'declined'] } },
+    current_topic: { type: ['string', 'null'] },
+    phase: { type: 'string', enum: ['opening', 'exploring', 'closing_check', 'ended'] },
+    serious_concern: { type: 'boolean' },
+  },
+};
+
+export async function trackProgress({ session, programme, participant }) {
+  const plan = planFor(session, programme, participant);
+  session.coverage ||= {};
+  session.declinedTopics ||= [];
+  if (!llmInfo().live) return null;
+  const topics = plan.guide.topics.map((t) => `- ${t.id}: ${t.label} (status so far: ${session.coverage[t.id] || 'not yet discussed'})`).join('\n');
+  const convo = (session.transcript || []).filter((t) => t.role === 'interviewer' || t.role === 'employee').slice(-30)
+    .map((t) => `${t.role === 'interviewer' ? 'Interviewer' : 'Employee'}: ${t.text}`).join('\n');
+  const state = await generateJson({
+    system: PROGRESS_RULES,
+    messages: [{ role: 'user', content: `Topics:\n${topics}\n\nConversation (most recent last):\n${convo}` }],
+    schema: PROGRESS_SCHEMA, effort: 'low', maxTokens: 1500,
+  });
+  applyState(session, state, plan);
+  return state;
+}
+

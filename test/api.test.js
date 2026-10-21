@@ -131,6 +131,26 @@ test('credits: one per invitation, reminders free, packs add credits', async () 
   assert.equal((await hr('GET', '/api/hr/me')).credits.unlimited, true, 'the demo workspace does not use credits');
 });
 
+test('live voice: unavailable without a key; turns are stored in spoken order and redacted', async () => {
+  const pv = await hr('POST', '/api/hr/programmes/prog_general/preview', { mode: 'ai_voice' });
+  const h = { 'x-session-token': pv.accessToken };
+  assert.equal((await call('GET', '/api/public/config')).body.voice.realtime, false);
+  assert.equal((await call('POST', `/api/session/${pv.id}/realtime`, {}, h)).status, 409, 'no live voice without an OpenAI key');
+  const t0 = Date.now() - 60000;
+  const a = await call('POST', `/api/session/${pv.id}/realtime/turn`, { role: 'interviewer', text: 'How was your time here?', at: t0 }, h);
+  assert.equal(a.status, 200);
+  // The reply was spoken (and stored) before the employee's earlier words finished transcribing.
+  await call('POST', `/api/session/${pv.id}/realtime/turn`, { role: 'interviewer', text: 'What changed?', at: t0 + 2000 }, h);
+  await call('POST', `/api/session/${pv.id}/realtime/turn`, { role: 'employee', text: 'Busy. Mail me at jo@example.com', at: t0 + 1000 }, h);
+  const s = (await call('GET', `/api/session/${pv.id}`, null, h)).body.session;
+  const turns = s.transcript.map((x) => `${x.role}: ${x.text}`);
+  assert.equal(turns.length, 3);
+  assert.match(turns[1], /^employee: Busy\./);
+  assert.ok(!turns[1].includes('jo@example.com'), 'contact details are removed');
+  assert.equal(turns[2], 'interviewer: What changed?');
+  assert.equal((await call('POST', `/api/session/${pv.id}/realtime/turn`, { role: 'employee', text: '  ' }, h)).status, 400);
+});
+
 test('employee text is stored without email addresses or phone numbers', async () => {
   const pv = await hr('POST', '/api/hr/programmes/prog_general/preview', { mode: 'ai_text' });
   const h = { 'x-session-token': pv.accessToken };

@@ -78,3 +78,37 @@ export async function generateJson({ system, messages, schema, effort = 'medium'
   }));
   return JSON.parse(text);
 }
+
+// --- Live voice: OpenAI Realtime ---------------------------------------------------
+// The browser connects to the speech-to-speech model directly over WebRTC with a
+// short-lived key minted here, so the real API key never reaches the browser.
+export const realtimeModel = () => process.env.REALTIME_MODEL || 'gpt-realtime-2.1';
+export const realtimeLive = () => llmInfo().live && process.env.REALTIME !== 'off';
+const REALTIME_VOICES = { calm: 'marin', clear: 'coral', low: 'cedar' };
+
+export async function createRealtimeKey({ instructions, voice, language }) {
+  const res = await fetch('https://api.openai.com/v1/realtime/client_secrets', {
+    method: 'POST',
+    headers: { authorization: `Bearer ${process.env.OPENAI_API_KEY}`, 'content-type': 'application/json' },
+    body: JSON.stringify({
+      // Only long enough to connect; the conversation itself can run longer.
+      expires_after: { anchor: 'created_at', seconds: 300 },
+      session: {
+        type: 'realtime',
+        model: realtimeModel(),
+        instructions,
+        audio: {
+          input: {
+            transcription: { model: process.env.REALTIME_TRANSCRIBE_MODEL || 'gpt-transcribe', ...(language ? { language } : {}) },
+            turn_detection: { type: 'semantic_vad' },
+          },
+          output: { voice: REALTIME_VOICES[voice] || REALTIME_VOICES.calm },
+        },
+      },
+    }),
+  });
+  const data = await res.json().catch(() => ({}));
+  if (!res.ok || !data.value) throw new Error(data.error?.message || `Realtime key request failed (${res.status})`);
+  return { key: data.value, expiresAt: data.expires_at || null, model: realtimeModel() };
+}
+

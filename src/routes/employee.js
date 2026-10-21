@@ -3,9 +3,9 @@ import { route, fail } from '../lib/http.js';
 import { store, must, findParticipantByToken, nowIso } from '../lib/data.js';
 import { newId, newToken } from '../lib/ids.js';
 import { SERVICE, LANGUAGES, DURATIONS, SECTIONS, THEMES } from '../domain/catalog.js';
-import { runTurn, planFor, guideOf } from '../domain/interviewer.js';
+import { runTurn, planFor, guideOf, realtimeInstructions, trackProgress } from '../domain/interviewer.js';
 import { summarise } from '../domain/summariser.js';
-import { llmInfo } from '../llm/index.js';
+import { llmInfo, realtimeLive, createRealtimeKey } from '../llm/index.js';
 import { voiceInfo } from './voice.js';
 import { redact } from '../domain/redact.js';
 
@@ -67,7 +67,10 @@ async function saveParticipant(p, patch) {
 }
 
 route('GET', '/api/public/config', async () => ({
-  service: SERVICE, languages: LANGUAGES, llm: llmInfo(), voice: voiceInfo(),
+  service: SERVICE, languages: LANGUAGES, llm: llmInfo(),
+  voice: realtimeLive()
+    ? { ...voiceInfo(), realtime: true, retention: { stt: 'Live voice: your audio is processed in real time by OpenAI to run the conversation, under OpenAI’s API data terms. PartWays does not record or keep audio; only the written transcript is kept.', tts: '' } }
+    : { ...voiceInfo(), realtime: false },
 }));
 
 route('GET', '/api/invite/:token', async (req) => {
@@ -200,6 +203,61 @@ route('POST', '/api/session/:id/turn', async (req) => {
       }
     },
   };
+});
+
+// --- Live voice (OpenAI Realtime) ------------------------------------------------
+// The browser holds the conversation with the speech-to-speech model itself, using a
+// short-lived key from here. Each finished turn comes back here to be redacted and
+// stored; after the interviewer's turns, progress (topics, phase) is updated.
+
+route('POST', '/api/session/:id/realtime', async (req) => {
+  const ctx = await loadSessionCtx(req);
+  const { s } = ctx;
+  if (!ACTIVE.includes(s.status)) fail(409, 'This conversation has finished. You can review your summary instead.');
+  if (!realtimeLive()) fail(409, 'Live voice is not available.');
+  if (s.status === 'paused') s.status = 'in_progress';
+  if (s.mode !== 'ai_voice') { s.mode = 'ai_voice'; s.modesUsed = [...new Set([...s.modesUsed, 'ai_voice'])]; }
+  if (['calm', 'clear', 'low'].includes(req.body?.voice)) s.voice = req.body.voice;
+  if (['balanced', 'warm', 'brief'].includes(req.body?.style)) s.voiceStyle = req.body.style;
+  s.events.push({ at: nowIso(), type: 'realtime_started' });
+  s.updatedAt = nowIso();
+  await store().put('session', s);
+  try {
+    return await createRealtimeKey({ instructions: realtimeInstructions({ ...ctx, session: s }), voice: s.voice, language: s.language });
+  } catch (err) {
+    console.error('realtime key failed', err.message);
+    fail(503, 'Live voice could not start just now.');
+  }
+});
+
+route('POST', '/api/session/:id/realtime/turn', async (req) => {
+  const ctx = await loadSessionCtx(req);
+  const { s } = ctx;
+  if (!ACTIVE.includes(s.status)) fail(409, 'This conversation has finished. You can review your summary instead.');
+  const role = req.body?.role === 'interviewer' ? 'interviewer' : 'employee';
+  const raw = String(req.body?.text || '').trim().slice(0, 4000);
+  const text = role === 'employee' ? redact(raw) : raw;
+  if (!text) fail(400, 'Nothing to save.');
+  if (req.body?.activeMs > s.activeMs) s.activeMs = Math.min(req.body.activeMs, s.activeMs + 30 * 60e3);
+  // Speech can be transcribed after the reply has begun, so turns are kept in the order they were spoken.
+  const at = new Date(Math.min(Date.now(), Number(req.body?.at) || Date.now())).toISOString();
+  const turn = { id: `t${s.transcript.length + 1}`, role, text, lang: s.language, at, via: 'voice', realtime: true };
+  let i = s.transcript.length;
+  while (i > 0 && s.transcript[i - 1].at > at) i -= 1;
+  s.transcript.splice(i, 0, turn);
+  s.updatedAt = nowIso();
+  await store().put('session', s);
+  let state = null;
+  if (role === 'interviewer') {
+    try {
+      state = await trackProgress({ ...ctx, session: s });
+      await store().put('session', s);
+    } catch (err) {
+      console.error('progress tracking failed', err.message);
+    }
+  }
+  const session = employeeSession(s, ctx.programme, ctx.participant);
+  return { turn, phase: s.phase, topics: session.topics, currentTopic: s.currentTopic, seriousConcern: !!state?.serious_concern };
 });
 
 route('POST', '/api/session/:id/event', async (req) => {
