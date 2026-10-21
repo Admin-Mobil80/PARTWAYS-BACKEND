@@ -4,6 +4,7 @@
 import { SecretsManagerClient, GetSecretValueCommand } from '@aws-sdk/client-secrets-manager';
 
 const REFRESH_MS = 5 * 60 * 1000;
+const RETRY_MS = 60 * 1000;
 let client, loadedAt = 0, inFlight = null;
 const fromSecret = new Set();
 
@@ -23,9 +24,10 @@ export function loadSecrets() {
   if (!process.env.SECRETS_ARN) return Promise.resolve();
   if (Date.now() - loadedAt < REFRESH_MS) return Promise.resolve();
   inFlight ||= load().catch((err) => {
-    // Keep serving with the keys already loaded; try again on the next request.
-    if (!loadedAt) throw err;
-    console.error('Could not refresh provider keys', err);
+    // A malformed or unreadable secret never takes the API down: keep the keys
+    // already loaded (or run without them, in offline mode) and retry in a minute.
+    console.error('Could not load provider keys; retrying in a minute', err.name, err.message);
+    loadedAt = Date.now() - REFRESH_MS + RETRY_MS;
   }).finally(() => { inFlight = null; });
   return inFlight;
 }
