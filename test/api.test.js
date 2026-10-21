@@ -297,13 +297,6 @@ test('participants: invited by email, WhatsApp or both, on every channel they ha
   assert.deepEqual(check.rows.map((r) => r.status), ['ok', 'ok', 'duplicate', 'error']);
 });
 
-test('actions require reasons to close and notes to complete', async () => {
-  const { action } = await hr('POST', '/api/hr/actions', { title: 'T', owner: 'O', outcome: 'X' });
-  assert.equal((await call('POST', `/api/hr/actions/${action.id}/status`, { status: 'closed' })).status, 400);
-  assert.equal((await call('POST', `/api/hr/actions/${action.id}/status`, { status: 'completed' })).status, 400);
-  assert.equal((await call('POST', `/api/hr/actions/${action.id}/status`, { status: 'completed', note: 'Done' })).status, 200);
-});
-
 test('owners add team members, who sign in to the same workspace with their role', async () => {
   const saved = token;
   await inOwnWorkspace(async () => {

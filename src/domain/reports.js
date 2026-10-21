@@ -5,14 +5,14 @@ import { fmtPct, listJoin, evidenceList } from './analytics.js';
 
 export const REPORT_TEMPLATES = {
   programme_summary: { label: 'Programme summary', description: 'Participation, main findings, objectives and limitations for one programme and period.' },
-  leadership_briefing: { label: 'Leadership briefing', description: 'A concise account of what deserves attention, what is working and agreed actions.' },
+  leadership_briefing: { label: 'Leadership briefing', description: 'A concise account of what deserves attention and what is working.' },
   period_comparison: { label: 'Period comparison', description: 'What changed between two reporting periods, with counts and proportions.' },
   theme_investigation: { label: 'Theme investigation', description: 'A focused look at one theme: prevalence, segments, mixed evidence and suggestions.' },
 };
 
 const SECTION_SETS = {
   programme_summary: ['scope', 'participation', 'key_findings', 'reasons', 'objectives', 'positives', 'suggestions', 'limitations'],
-  leadership_briefing: ['key_findings', 'attention', 'positives', 'objectives', 'suggestions', 'actions', 'limitations', 'scope'],
+  leadership_briefing: ['key_findings', 'attention', 'positives', 'objectives', 'suggestions', 'limitations', 'scope'],
   period_comparison: ['scope', 'participation', 'comparison', 'key_findings', 'limitations'],
   theme_investigation: ['scope', 'theme_focus', 'theme_segments', 'theme_evidence', 'suggestions', 'limitations'],
 };
@@ -20,8 +20,8 @@ const SECTION_SETS = {
 const TITLES = {
   scope: 'Scope and population', participation: 'Participation', key_findings: 'What we are hearing',
   reasons: 'Reasons for leaving', objectives: 'Findings against learning objectives', positives: 'What is working well',
-  suggestions: 'Suggested actions', limitations: 'Limitations', attention: 'What deserves attention',
-  comparison: 'Period comparison', actions: 'Action progress', theme_focus: 'Theme overview',
+  suggestions: 'Suggestions from respondents', limitations: 'Limitations', attention: 'What deserves attention',
+  comparison: 'Period comparison', theme_focus: 'Theme overview',
   theme_segments: 'Where this theme appears', theme_evidence: 'Supporting evidence',
 };
 
@@ -39,7 +39,7 @@ function suggestionsFrom(insights) {
   return Object.values(bucket).sort((a, b) => b.n - a.n);
 }
 
-export function buildSections(insights, template, { themeId, actions = [] } = {}) {
+export function buildSections(insights, template, { themeId } = {}) {
   const c = insights.current;
   const s = insights.scope;
   const n = c.n;
@@ -76,14 +76,6 @@ export function buildSections(insights, template, { themeId, actions = [] } = {}
       out.push(make(id, sug.length
         ? `Respondents suggested: ${sug.map((x) => `“${x.text}” (${x.n})`).join('; ')}. These are respondents' suggestions and interpretations for discussion, not proven solutions.`
         : 'Respondents did not make suggestions on this topic.', { interpretation: true }));
-    } else if (id === 'actions') {
-      const relevant = actions.filter((a) => a.programmeId === s.programmes[0]?.id || !a.programmeId);
-      const byStatus = {};
-      for (const a of relevant) byStatus[a.status] = (byStatus[a.status] || 0) + 1;
-      const overdue = relevant.filter((a) => a.dueDate && a.dueDate < new Date().toISOString().slice(0, 10) && !['completed', 'closed'].includes(a.status));
-      out.push(make(id, relevant.length
-        ? `${relevant.length} improvement actions are linked to this programme: ${Object.entries(byStatus).map(([k, v]) => `${v} ${k.replace('_', ' ')}`).join(', ')}.${overdue.length ? ` ${overdue.length} ${overdue.length === 1 ? 'is' : 'are'} overdue.` : ''} Completing an action does not show that the underlying concern is resolved.`
-        : 'No improvement actions have been created yet.', { actions: relevant.map((a) => ({ id: a.id, title: a.title, owner: a.owner, status: a.status, dueDate: a.dueDate })) }));
     } else if (id === 'limitations') {
       const lim = [
         `Findings describe ${n} people who chose to respond; they are not a measure of organisation-wide prevalence or proof of what caused turnover.`,

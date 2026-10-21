@@ -26,7 +26,7 @@ async function resolveWorkspace(req) {
 
 // Owners run the workspace; analysts work with findings and themes; leaders read and act on findings.
 // The demo workspace keeps its "View as" switch, so it is not restricted.
-const FINDINGS = ['/api/hr/insights', '/api/hr/assistant', '/api/hr/reports', '/api/hr/actions', '/api/hr/bookmarks'];
+const FINDINGS = ['/api/hr/insights', '/api/hr/assistant', '/api/hr/reports', '/api/hr/bookmarks'];
 function allowed(user, req) {
   if (!user || user.workspace === 'demo' || user.role === 'owner' || req.method === 'GET') return true;
   if (FINDINGS.some((x) => req.path.startsWith(x))) return true;

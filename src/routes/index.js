@@ -5,6 +5,5 @@ import './programmes.js';
 import './participants.js';
 import './insights.js';
 import './reports.js';
-import './actions.js';
 import './billing.js';
 import './team.js';
