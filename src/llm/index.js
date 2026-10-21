@@ -30,7 +30,8 @@ const REASONING_HEADROOM = 8000;
 function params({ system, messages, effort = 'medium', maxTokens = 16000, format }) {
   return {
     model: llmInfo().model,
-    instructions: system,
+    // Plain text; blocks of { text } are joined so callers cannot send a shape OpenAI rejects.
+    instructions: Array.isArray(system) ? system.map((b) => (typeof b === 'string' ? b : b.text)).join('\n\n') : system,
     input: messages.map(({ role, content }) => ({ role, content })),
     reasoning: { effort },
     max_output_tokens: maxTokens + REASONING_HEADROOM,

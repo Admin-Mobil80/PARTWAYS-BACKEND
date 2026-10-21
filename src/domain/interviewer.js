@@ -170,10 +170,9 @@ export async function runTurn({ session, programme, org, participant, employeeTe
     applyState(session, out.state, plan);
     return out;
   }
-  const system = [
-    { type: 'text', text: RULES, cache_control: { type: 'ephemeral' } },
-    { type: 'text', text: contextBlock(session, programme, org, participant) },
-  ];
+  // The fixed rules come first, so every turn shares the same prefix and OpenAI's
+  // automatic prompt caching applies; the per-interview context follows.
+  const system = `${RULES}\n\n${contextBlock(session, programme, org, participant)}`;
   // Hold back text that could be the start of the state marker.
   let buffer = '';
   let emitted = 0;
