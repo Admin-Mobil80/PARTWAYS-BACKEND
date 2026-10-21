@@ -267,6 +267,29 @@ test('participants: duplicate mobile numbers are rejected and sends are simulate
   assert.equal(detail.participant.summary, undefined);
 });
 
+test('participants: adding or importing can send the invitation in the same step', async () => {
+  const added = await hr('POST', '/api/hr/participants', { programmeId: 'prog_general', email: 'oneStep@example.com', send: true });
+  assert.equal(added.added, true);
+  assert.equal(added.participant.invitation.status, 'sent');
+  assert.deepEqual(added.deliveries.map((d) => d.channel), ['email']);
+
+  const csv = 'email,mobile\nimport.a@example.com,\n,+353 85 555 0101\nimport.c@example.com,+353 85 555 0102';
+  const check = await hr('POST', '/api/hr/participants/import/validate', { programmeId: 'prog_general', csv });
+  const r = await hr('POST', '/api/hr/participants/import/commit', { programmeId: 'prog_general', rows: check.rows.map((x) => x.input), send: true });
+  assert.deepEqual({ created: r.created, sent: r.sent, notSent: r.notSent }, { created: 3, sent: 3, notSent: 0 });
+
+  // In the organisation's own workspace: a draft programme cannot send, and credits are checked before anyone is added.
+  await inOwnWorkspace(async () => {
+    const { programme: draft } = await hr('POST', '/api/hr/programmes', { name: 'Draft for add-and-send' });
+    assert.equal(draft.status, 'draft');
+    const before = (await hr('GET', '/api/hr/participants')).participants.length;
+    assert.equal((await call('POST', '/api/hr/participants', { programmeId: draft.id, email: 'nope@example.com', send: true })).status, 409);
+    assert.equal((await hr('GET', '/api/hr/participants')).participants.length, before, 'nobody is added half-way');
+    const plain = await hr('POST', '/api/hr/participants', { programmeId: draft.id, email: 'later@example.com' });
+    assert.equal(plain.participant.invitation.status, 'prepared', 'adding without sending still works');
+  });
+});
+
 test('participants: invited by email, WhatsApp or both, on every channel they have', async () => {
   const byEmail = await hr('POST', '/api/hr/participants', { programmeId: 'prog_general', email: 'Leaver@Example.com' });
   assert.equal(byEmail.participant.email, 'l•••@example.com', 'the full email is never returned');

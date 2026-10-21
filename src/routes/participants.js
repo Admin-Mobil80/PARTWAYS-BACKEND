@@ -177,15 +177,46 @@ async function createParticipant(programme, clean, population) {
 // People added in an organisation's own workspace are live; in the demo they are evaluation records.
 const newPopulation = async () => ((await store().get('org', 'org'))?.demo ? 'evaluation' : 'live');
 
+// Adding someone can send their invitation in the same step (send: true). The
+// programme and credits are checked first, so nobody is added half-way.
+const MAX_SEND_IMPORT = 200;
+const SEND_CONCURRENCY = 5;
+
+async function checkCanInvite(programme, count) {
+  if (programme.status !== 'active') fail(409, 'Activate the programme before sending invitations.');
+  const { unlimited, balance } = await creditSummary(store());
+  if (!unlimited && balance < count) {
+    fail(402, count === 1
+      ? 'You have no interview credits left. Buy credits to send more invitations.'
+      : `Inviting ${count} people needs ${count} credits, and you have ${balance}. Buy credits, or import fewer people.`, { code: 'no_credits' });
+  }
+}
+
 route('POST', '/api/hr/participants/import/commit', async (req) => {
   const programme = await must('programme', req.body?.programmeId, 'Programme');
   const existing = await existingContacts(programme.id);
   const seen = noContacts();
   const results = (req.body?.rows || []).map((r) => validateRow(r, existing, seen));
-  const created = [];
+  const ready = results.filter((r) => r.status === 'ok' || r.status === 'warning');
+  const send = !!req.body?.send;
+  if (send) {
+    if (ready.length > MAX_SEND_IMPORT) fail(400, `Import and invite up to ${MAX_SEND_IMPORT} people at a time.`);
+    await checkCanInvite(programme, ready.length);
+  }
   const population = await newPopulation();
-  for (const r of results) if (r.status === 'ok' || r.status === 'warning') created.push(await createParticipant(programme, r.clean, population));
-  return { created: created.length, skipped: results.length - created.length };
+  const created = [];
+  for (const r of ready) created.push(await createParticipant(programme, r.clean, population));
+  let sent = 0, notSent = 0;
+  if (send) {
+    const queue = [...created];
+    const worker = async () => {
+      for (let p = queue.shift(); p; p = queue.shift()) {
+        try { await sendMessage(p, 'invitation', req); sent += 1; } catch (err) { notSent += 1; console.error('Import invitation failed', p.id, err.message); }
+      }
+    };
+    await Promise.all(Array.from({ length: SEND_CONCURRENCY }, worker));
+  }
+  return { created: created.length, skipped: results.length - created.length, sent, notSent };
 }, { auth: true });
 
 route('POST', '/api/hr/participants', async (req) => {
@@ -193,8 +224,16 @@ route('POST', '/api/hr/participants', async (req) => {
   const r = validateRow(req.body || {}, await existingContacts(programme.id), noContacts());
   if (r.status === 'error') fail(400, r.errors.join(' '));
   if (r.status === 'duplicate') fail(409, r.duplicate);
+  const send = !!req.body?.send;
+  if (send) await checkCanInvite(programme, 1);
   const p = await createParticipant(programme, r.clean, await newPopulation());
-  return { participant: opsView(p, []) };
+  if (!send) return { participant: opsView(p, []) };
+  try {
+    return { ...(await sendMessage(p, 'invitation', req)), added: true };
+  } catch (err) {
+    // Added, but the invitation did not go: it stays prepared and can be sent from the person's record.
+    return { participant: opsView(p, []), added: true, sendError: err.message };
+  }
 }, { auth: true });
 
 function siteOrigin(req) {
@@ -235,15 +274,13 @@ route('GET', '/api/hr/participants/:id/message', async (req) => {
 // recorded but not delivered until a WhatsApp account is connected. In the
 // demonstration workspace nothing is delivered. One credit per invitation,
 // charged only once at least one channel has gone out.
-route('POST', '/api/hr/participants/:id/send', async (req) => {
-  const p = await must('participant', req.params.id, 'Participant');
+async function sendMessage(p, kind, req) {
   const programme = await must('programme', p.programmeId, 'Programme');
   const org = await store().get('org', 'org');
   if (programme.status !== 'active') fail(409, 'Activate the programme before sending invitations.');
   if (p.invitation.status === 'cancelled') fail(409, 'This invitation was cancelled.');
   const channels = channelsOf(p);
   if (!channels.length) fail(409, 'This person has no email address or mobile number to send to.');
-  const kind = req.body?.kind === 'reminder' ? 'reminder' : 'invitation';
   if (kind === 'invitation') {
     if (p.invitation.status !== 'prepared') fail(409, 'This invitation has already been sent. Send a reminder instead.');
     const { unlimited, balance } = await creditSummary(store());
@@ -296,6 +333,11 @@ route('POST', '/api/hr/participants/:id/send', async (req) => {
     participant: opsView(p, []), simulated: p.invitation.simulated, deliveries: sent.map(({ channel, simulated }) => ({ channel, simulated })),
     creditUsed: !!p.invitation.credit && kind === 'invitation', message: notes.join(' '),
   };
+}
+
+route('POST', '/api/hr/participants/:id/send', async (req) => {
+  const p = await must('participant', req.params.id, 'Participant');
+  return sendMessage(p, req.body?.kind === 'reminder' ? 'reminder' : 'invitation', req);
 }, { auth: true });
 
 route('POST', '/api/hr/participants/:id/extend', async (req) => {
