@@ -205,7 +205,7 @@ test('assistant answers from the same numbers as the dashboard', async () => {
   assert.match(answer.said, new RegExp(`${w.respondents} of ${ins.current.n}`));
 });
 
-test('employee interview: text conversation, review, submit, then correct and withdraw', async () => {
+test('employee interview: text conversation, review, submit; submitting is final', async () => {
   const tryRes = await hr('POST', '/api/hr/demo/try', { persona: 'workload', programmeId: 'prog_general' });
   const tokenInv = tryRes.link.split('/i/')[1];
   const inv = await call('GET', `/api/invite/${tokenInv}`);
@@ -235,10 +235,17 @@ test('employee interview: text conversation, review, submit, then correct and wi
   const before = await insights(evalQ);
   assert.equal(before.current.participation.submitted >= 1, true);
 
-  const wd = await call('POST', `/api/session/${id}/withdraw`, {}, h);
-  assert.equal(wd.status, 200);
+  // Nothing can change a submitted summary.
+  assert.equal((await call('PUT', `/api/session/${id}/summary`, { summary }, h)).status, 409);
+  assert.equal((await call('POST', `/api/session/${id}/submit`, {}, h)).status, 409);
+  assert.equal((await call('POST', `/api/session/${id}/discard`, {}, h)).status, 409);
+  const turnId = (await call('GET', `/api/session/${id}`, null, h)).body.session.transcript.find((x) => x.role === 'employee').id;
+  assert.equal((await call('POST', `/api/session/${id}/correct-turn`, { turnId, text: 'changed' }, h)).status, 409);
+  for (const gone of ['withdraw', 'start-correction', 'cancel-correction']) {
+    assert.equal((await call('POST', `/api/session/${id}/${gone}`, {}, h)).status, 404, `${gone} no longer exists`);
+  }
   const after = await insights(evalQ);
-  assert.equal(after.current.participation.submitted, before.current.participation.submitted - 1);
+  assert.equal(after.current.participation.submitted, before.current.participation.submitted);
 });
 
 test('preview interviews never reach findings and cannot be submitted', async () => {

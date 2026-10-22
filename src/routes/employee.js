@@ -10,6 +10,8 @@ import { voiceInfo } from './voice.js';
 import { redact } from '../domain/redact.js';
 
 const ACTIVE = ['in_progress', 'paused'];
+// Submitting is final: the employee reviews and corrects the summary before submitting.
+const FINAL = 'Submitted feedback is final and cannot be changed.';
 
 function inviteState(p, programme, sessions) {
   if (p.invitation.status === 'cancelled' || p.status === 'cancelled') return 'cancelled';
@@ -42,7 +44,7 @@ export function employeeSession(s, programme, participant) {
     duration: s.duration, focusTopics: s.focusTopics, voiceStyle: s.voiceStyle, phase: s.phase, currentTopic: s.currentTopic,
     transcript: s.transcript.filter((t) => t.role !== 'event'),
     topics: plan.topics.map((t) => ({ id: t.id, label: t.label, status: s.coverage?.[t.id] || 'pending' })),
-    activeMs: s.activeMs, summary: s.pendingCorrection || s.summary, pendingCorrection: !!s.pendingCorrection,
+    activeMs: s.activeMs, summary: s.summary,
     submittedAt: s.submittedAt, ratings: s.ratings, interviewId: s.interviewId || null,
     revisions: s.revisions, preview: s.population === 'preview', seriousConcernFlagged: !!s.seriousConcernFlagged,
     themes: Object.fromEntries(Object.entries(THEMES).map(([k, v]) => [k, v.label])), sections: SECTIONS,
@@ -278,6 +280,7 @@ route('POST', '/api/session/:id/event', async (req) => {
 
 route('POST', '/api/session/:id/correct-turn', async (req) => {
   const { s, programme, participant } = await loadSessionCtx(req);
+  if (s.status === 'submitted') fail(409, FINAL);
   const turn = s.transcript.find((t) => t.id === req.body?.turnId && t.role === 'employee');
   if (!turn) fail(404, 'That part of the conversation could not be found.');
   const text = redact(String(req.body?.text || '').trim());
@@ -348,12 +351,9 @@ function cleanSummary(input, existing, session) {
 
 route('PUT', '/api/session/:id/summary', async (req) => {
   const { s, programme, participant } = await loadSessionCtx(req);
-  if (s.status === 'submitted') {
-    s.pendingCorrection = cleanSummary(req.body?.summary || {}, s.pendingCorrection || s.summary, s);
-  } else {
-    if (!['awaiting_review', 'draft'].includes(s.status)) fail(409, 'This summary can no longer be edited.');
-    s.summary = cleanSummary(req.body?.summary || {}, s.summary, s);
-  }
+  if (s.status === 'submitted') fail(409, FINAL);
+  if (!['awaiting_review', 'draft'].includes(s.status)) fail(409, 'This summary can no longer be edited.');
+  s.summary = cleanSummary(req.body?.summary || {}, s.summary, s);
   s.updatedAt = nowIso();
   await store().put('session', s);
   return { session: employeeSession(s, programme, participant), savedAt: s.updatedAt };
@@ -372,7 +372,7 @@ route('POST', '/api/session/:id/save-draft', async (req) => {
 
 route('POST', '/api/session/:id/discard', async (req) => {
   const { s, participant } = await loadSessionCtx(req);
-  if (s.status === 'submitted') fail(409, 'Submitted feedback is withdrawn with the withdraw option instead.');
+  if (s.status === 'submitted') fail(409, FINAL);
   s.status = 'discarded';
   s.summary = null;
   s.updatedAt = nowIso();
@@ -384,15 +384,7 @@ route('POST', '/api/session/:id/discard', async (req) => {
 route('POST', '/api/session/:id/submit', async (req) => {
   const { s, programme, participant } = await loadSessionCtx(req);
   if (s.population === 'preview') fail(409, 'Preview interviews cannot be submitted. They are not added to any findings.');
-  if (s.status === 'submitted' && s.pendingCorrection) {
-    if (req.body?.summary) s.pendingCorrection = cleanSummary(req.body.summary, s.pendingCorrection, s);
-    s.summary = s.pendingCorrection;
-    delete s.pendingCorrection;
-    s.revisions.push({ at: nowIso(), type: 'correction', note: (req.body?.note || 'Employee corrected their submitted summary.').slice(0, 500), by: 'employee' });
-    s.updatedAt = nowIso();
-    await store().put('session', s);
-    return { session: employeeSession(s, programme, participant) };
-  }
+  if (s.status === 'submitted') fail(409, FINAL);
   if (!['awaiting_review', 'draft'].includes(s.status)) fail(409, 'This summary is not ready to submit.');
   if (req.body?.summary) s.summary = cleanSummary(req.body.summary, s.summary, s);
   if (!s.summary.points.some((p) => p.status === 'kept')) fail(400, 'There is nothing left to submit. Add a point, or leave without submitting.');
@@ -401,33 +393,6 @@ route('POST', '/api/session/:id/submit', async (req) => {
   s.updatedAt = s.submittedAt;
   await store().put('session', s);
   if (participant?.id) await saveParticipant(participant, { status: 'submitted' });
-  return { session: employeeSession(s, programme, participant) };
-});
-
-route('POST', '/api/session/:id/start-correction', async (req) => {
-  const { s, programme, participant } = await loadSessionCtx(req);
-  if (s.status !== 'submitted') fail(409, 'Only submitted feedback can be corrected.');
-  s.pendingCorrection = structuredClone(s.summary);
-  await store().put('session', s);
-  return { session: employeeSession(s, programme, participant) };
-});
-
-route('POST', '/api/session/:id/cancel-correction', async (req) => {
-  const { s, programme, participant } = await loadSessionCtx(req);
-  delete s.pendingCorrection;
-  await store().put('session', s);
-  return { session: employeeSession(s, programme, participant) };
-});
-
-route('POST', '/api/session/:id/withdraw', async (req) => {
-  const { s, programme, participant } = await loadSessionCtx(req);
-  if (s.status !== 'submitted') fail(409, 'Only submitted feedback can be withdrawn.');
-  s.status = 'withdrawn';
-  delete s.pendingCorrection;
-  s.revisions.push({ at: nowIso(), type: 'withdrawal', note: 'Employee withdrew their submitted feedback.', by: 'employee' });
-  s.updatedAt = nowIso();
-  await store().put('session', s);
-  if (participant?.id) await saveParticipant(participant, { status: 'withdrawn' });
   return { session: employeeSession(s, programme, participant) };
 });
 
