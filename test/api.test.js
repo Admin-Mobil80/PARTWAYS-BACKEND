@@ -398,3 +398,16 @@ test('owners add team members, who sign in to the same workspace with their role
     assert.equal((await call('POST', '/api/auth/start', { email: 'analyst@example.com' })).status, 404);
   }).finally(() => { token = saved; });
 });
+
+test('a restricted live Stripe key counts as live payments', async () => {
+  const { stripeMode } = await import('../src/routes/billing.js');
+  const before = process.env.STRIPE_SECRET_KEY;
+  try {
+    for (const [key, mode] of [['rk_live_abc', 'live'], ['sk_live_abc', 'live'], ['sk_test_abc', 'test'], ['rk_test_abc', 'test']]) {
+      process.env.STRIPE_SECRET_KEY = key;
+      assert.equal(stripeMode(), mode, key);
+    }
+  } finally {
+    if (before === undefined) delete process.env.STRIPE_SECRET_KEY; else process.env.STRIPE_SECRET_KEY = before;
+  }
+});

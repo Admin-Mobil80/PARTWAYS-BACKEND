@@ -10,7 +10,9 @@ import { PACKS, FREE_CREDITS, creditSummary, grantPurchase } from '../domain/wor
 
 let client;
 const stripe = () => (process.env.STRIPE_SECRET_KEY ? (client ||= new Stripe(process.env.STRIPE_SECRET_KEY)) : null);
-const stripeMode = () => (!process.env.STRIPE_SECRET_KEY ? 'simulated' : process.env.STRIPE_SECRET_KEY.startsWith('sk_live_') ? 'live' : 'test');
+// Live secret (sk_live_) and restricted (rk_live_) keys both take real payments.
+const stripeMode = () => (!process.env.STRIPE_SECRET_KEY ? 'simulated' : /^(sk|rk)_live_/.test(process.env.STRIPE_SECRET_KEY.trim()) ? 'live' : 'test');
+export { stripeMode };
 
 function siteOrigin(req) {
   if (process.env.SITE_URL) return process.env.SITE_URL.replace(/\/$/, '');
