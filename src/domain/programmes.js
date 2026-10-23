@@ -11,6 +11,7 @@ export const feedbackNoticeFor = (orgShort) => `PartWays keeps a written transcr
 
 export function templateTopics(template) {
   const pick = (ids) => ids.map((id) => ({ ...structuredClone(DEFAULT_TOPICS.find((t) => t.id === id)), objectiveIds: [], exact: false }));
+  if (template === 'custom') return pick(['experience', 'reasons', 'positives', 'anything_else']);
   if (template === 'end_of_contract') return pick(['experience', 'role', 'manager', 'team', 'positives', 'suggestions', 'recommend', 'anything_else']);
   if (template === 'frontline') return pick(['experience', 'reasons', 'workload', 'flexibility', 'manager', 'team', 'positives', 'preventability', 'anything_else']);
   if (template === 'early_tenure') return pick(['experience', 'reasons', 'role', 'manager', 'team', 'positives', 'preventability', 'anything_else']);
@@ -19,10 +20,10 @@ export function templateTopics(template) {
 }
 
 // A new draft programme from a template. The caller sets the id and name.
-export function newProgramme({ name, template = 'general', org }) {
+export function newProgramme({ name, template = 'general', framing = '', org }) {
   const short = org?.shortName || org?.name || 'your organisation';
   return {
-    id: newId('prog'), name, template, status: 'draft',
+    id: newId('prog'), name, template, ...(template === 'custom' ? { framing } : {}), status: 'draft',
     languages: ['en', 'de', 'fr'], modes: ['ai_voice', 'ai_text'], durations: ['quick', 'standard', 'in_depth'],
     reminder: { enabled: true, afterDays: 4, max: 2 },
     feedbackNotice: feedbackNoticeFor(short),

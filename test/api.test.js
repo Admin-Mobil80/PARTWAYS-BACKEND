@@ -88,6 +88,20 @@ test('sign-up country comes from the visitor\'s location when CloudFront knows i
   assert.equal((await call('GET', '/api/public/country', null, { 'cloudfront-viewer-country': '<x>' })).body.country, null);
 });
 
+test('a Custom programme carries its own description of the departures', async () => {
+  await inOwnWorkspace(async () => {
+    assert.equal((await call('POST', '/api/hr/programmes', { name: 'Custom', template: 'custom' })).status, 400, 'a Custom programme needs a description');
+    const framing = 'Nurses leaving in their first two years. Focus on shift patterns.';
+    const { programme: p } = await hr('POST', '/api/hr/programmes', { name: 'Custom', template: 'custom', framing });
+    assert.equal(p.framing, framing);
+    assert.deepEqual(p.topics.map((t) => t.id), ['experience', 'reasons', 'positives', 'anything_else']);
+    const { programme: q } = await hr('PUT', `/api/hr/programmes/${p.id}/settings`, { framing: 'Nurses leaving.' });
+    assert.equal(q.framing, 'Nurses leaving.');
+    const { programme: g } = await hr('POST', '/api/hr/programmes', { name: 'General', template: 'general', framing: 'ignored' });
+    assert.equal(g.framing, undefined, 'only Custom programmes keep their own description');
+  });
+});
+
 test('workspaces are isolated between organisations', async () => {
   const saved = token;
   const other = await signUp('second@example.org', 'Second Org');

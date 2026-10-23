@@ -166,6 +166,14 @@ export const TEMPLATES = {
   leadership: { label: 'Leadership exits', framing: 'The employee held a leadership role. Explore direction, decision-making and the leadership team, while keeping questions about individuals neutral.' },
   frontline: { label: 'Frontline roles', framing: 'The employee worked in a frontline or operational role. Use plain, practical language about shifts, sites and day-to-day work.' },
   end_of_contract: { label: 'End-of-contract departures', framing: 'The employee is leaving because a fixed-term contract ended. Do not frame this as a choice to leave; focus on their experience and whether they would return.' },
+  // The organisation describes the departures itself (programme.framing) and builds the guide from its own objectives.
+  custom: { label: 'Custom', framing: '', about: 'Describe the departures in your own words and build the interview from your own objectives and questions.' },
 };
+
+// What the interviewer and planner are told about the departures: a Custom programme's
+// own description, otherwise its template's.
+export const framingOf = (programme) => (programme?.template === 'custom' && String(programme.framing || '').trim())
+  || TEMPLATES[programme?.template]?.framing || TEMPLATES.general.framing;
+
 
 export const TIER_ORDER = { quick: 0, standard: 1, in_depth: 2 };

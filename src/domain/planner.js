@@ -46,14 +46,14 @@ Rules:
 - Keep "exact": true only for questions HR supplied with exact wording.
 - Map each objective to the theme ids its findings should draw on (empty if it is about reasons or positives generally).`;
 
-export async function proposePlan({ objectives, template, existingTopics = [] }) {
+export async function proposePlan({ objectives, template, framing, existingTopics = [] }) {
   if (!llmInfo().live) return offlinePlan(structuredClone(objectives), template);
   const defaults = DEFAULT_TOPICS.map((t) => `${t.id} [${t.tier}, ${t.kind}] ${t.label}: "${t.opening}" themes=${t.themes.join(',') || '-'}`).join('\n');
   const exact = existingTopics.filter((t) => t.exact).map((t) => `${t.id}: "${t.opening}"`).join('\n') || 'none';
   const objs = objectives.map((o) => `${o.id} [${o.priority} priority, ${o.depth} depth${o.appliesTo ? `, applies to ${o.appliesTo.dimension} = ${o.appliesTo.values.join('/')}` : ''}]: ${o.title}. ${o.description || ''} ${o.context ? `Context: ${o.context}` : ''}`).join('\n');
   const out = await generateJson({
     system: SYSTEM,
-    messages: [{ role: 'user', content: `Departure context: ${TEMPLATES[template]?.framing || TEMPLATES.general.framing}\n\nObjectives:\n${objs}\n\nExact-wording questions to keep:\n${exact}\n\nDefault guide topics:\n${defaults}\n\nTheme ids: ${THEME_IDS.join(', ')}` }],
+    messages: [{ role: 'user', content: `Departure context: ${framing || TEMPLATES[template]?.framing || TEMPLATES.general.framing}\n\nObjectives:\n${objs}\n\nExact-wording questions to keep:\n${exact}\n\nDefault guide topics:\n${defaults}\n\nTheme ids: ${THEME_IDS.join(', ')}` }],
     schema: SCHEMA, effort: 'medium',
   });
   const objIds = new Set(objectives.map((o) => o.id));

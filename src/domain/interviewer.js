@@ -1,6 +1,6 @@
 // The AI interviewer. One function, runTurn, drives both voice and text interviews:
 // it streams the spoken reply and then updates the session's coverage state.
-import { DURATIONS, TEMPLATES, TIER_ORDER, LANGUAGES, THEMES } from './catalog.js';
+import { DURATIONS, framingOf, TIER_ORDER, LANGUAGES, THEMES } from './catalog.js';
 import { llmInfo, streamText, generateJson, fastModel } from '../llm/index.js';
 import { offlineTurn } from './offline.js';
 
@@ -76,7 +76,7 @@ function contextBlock(session, programme, org, participant) {
   const lang = LANG_NAME[session.language] || 'English';
   const lines = [];
   lines.push(`Commissioning organisation: ${org.name}. Programme: ${programme.name}.`);
-  lines.push(`Departure context: ${TEMPLATES[programme.template]?.framing || TEMPLATES.general.framing}`);
+  lines.push(`Departure context: ${framingOf(programme)}`);
   lines.push(`Interview language: ${lang}. Mode: ${session.mode === 'ai_voice' ? 'spoken conversation' : 'typed conversation'}.`);
   lines.push(`Chosen length: ${plan.duration.label} (${plan.duration.minutes} minutes). Active time so far: ${Math.round((session.activeMs || 0) / 60000)} minutes.`);
   if (session.voiceStyle === 'brief') lines.push('Conversational style requested: brief and to the point.');

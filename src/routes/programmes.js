@@ -2,7 +2,7 @@
 import { route, fail } from '../lib/http.js';
 import { store, must, nowIso } from '../lib/data.js';
 import { newId } from '../lib/ids.js';
-import { DEFAULT_TOPICS, TEMPLATES, DURATIONS, LANGUAGES, THEMES, DIMENSIONS } from '../domain/catalog.js';
+import { DEFAULT_TOPICS, TEMPLATES, framingOf, DURATIONS, LANGUAGES, THEMES, DIMENSIONS } from '../domain/catalog.js';
 import { proposePlan, analysePlan, diffGuides } from '../domain/planner.js';
 import { createSession } from './employee.js';
 import { llmInfo } from '../llm/index.js';
@@ -20,7 +20,7 @@ async function programmeSummary(p, participants, sessions) {
   for (const x of mine) status[x.status] = (status[x.status] || 0) + 1;
   const processing = sessions.filter((s) => s.programmeId === p.id && s.status === 'submitted' && !s.summary).length;
   return {
-    id: p.id, name: p.name, description: p.description, template: p.template, status: p.status,
+    id: p.id, name: p.name, description: p.description, template: p.template, framing: p.framing, status: p.status,
     activeVersion: p.activeVersion, hasDraft: !!p.draft, reportingMode: p.reportingMode, objectives: p.objectives.length,
     counts: { participants: mine.length, ...status }, processing, createdAt: p.createdAt,
     demoParticipants: mine.filter((x) => x.population === 'demo').length, evaluationParticipants: mine.filter((x) => x.population === 'evaluation').length,
@@ -41,7 +41,7 @@ route('GET', '/api/hr/programmes', async () => {
 }, { auth: true });
 
 route('POST', '/api/hr/programmes', async (req) => {
-  const { name, template = 'general', duplicateOf } = req.body || {};
+  const { name, template = 'general', framing, duplicateOf } = req.body || {};
   if (!String(name || '').trim()) fail(400, 'Give the programme a name.');
   let p;
   if (duplicateOf) {
@@ -50,7 +50,9 @@ route('POST', '/api/hr/programmes', async (req) => {
     p = { ...structuredClone(src), objectives: structuredClone(g.objectives), topics: structuredClone(g.topics) };
   } else {
     if (!TEMPLATES[template]) fail(400, 'Unknown template.');
-    p = newProgramme({ name, template, org: await store().get('org', 'org') });
+    const own = String(framing || '').trim().slice(0, 2000);
+    if (template === 'custom' && !own) fail(400, 'Describe who is leaving and what the interview should focus on.');
+    p = newProgramme({ name, template, framing: own, org: await store().get('org', 'org') });
   }
   Object.assign(p, {
     id: newId('prog'), name: String(name).trim().slice(0, 120), status: 'draft', activeVersion: null, guideVersions: [], draft: null,
@@ -77,6 +79,7 @@ route('PUT', '/api/hr/programmes/:id/settings', async (req) => {
   const set = (k, v) => { if (v !== undefined) p[k] = v; };
   set('name', str(b.name, 120)); set('description', str(b.description, 500)); set('intro', str(b.intro));
   set('completionMessage', str(b.completionMessage)); set('feedbackNotice', str(b.feedbackNotice));
+  if (p.template === 'custom') set('framing', str(b.framing));
   if (Array.isArray(b.languages)) { const l = b.languages.filter((x) => LANGUAGES.some((y) => y.code === x)); if (!l.length) fail(400, 'Choose at least one language.'); p.languages = l; }
   if (Array.isArray(b.modes)) { const m = b.modes.filter((x) => ['ai_voice', 'ai_text'].includes(x)); if (!m.length) fail(400, 'Choose at least one interview format.'); p.modes = m; }
   if (Array.isArray(b.durations)) { const d = b.durations.filter((x) => DURATIONS[x]); if (!d.length) fail(400, 'Choose at least one interview length.'); p.durations = d; }
@@ -143,7 +146,7 @@ route('POST', '/api/hr/programmes/:id/plan', async (req) => {
   const objectives = cleanObjectives(req.body?.objectives);
   if (!objectives.length) fail(400, 'Add at least one thing you want to understand first.');
   try {
-    const plan = await proposePlan({ objectives, template: p.template, existingTopics: workingGuide(p).topics });
+    const plan = await proposePlan({ objectives, template: p.template, framing: framingOf(p), existingTopics: workingGuide(p).topics });
     return { ...plan, analysis: analysePlan(plan.objectives, plan.topics) };
   } catch (err) {
     console.error('plan failed', err);
