@@ -27,9 +27,12 @@ export class RefusalError extends Error {}
 // tokens, so the visible answer gets headroom above what the caller asked for.
 const REASONING_HEADROOM = 8000;
 
-function params({ system, messages, effort = 'medium', maxTokens = 16000, format }) {
+// Small, frequent jobs (live interview progress tracking) use a cheaper model.
+export const fastModel = () => process.env.FAST_MODEL || 'gpt-6-luna';
+
+function params({ system, messages, model, effort = 'medium', maxTokens = 16000, format }) {
   return {
-    model: llmInfo().model,
+    model: model || llmInfo().model,
     // Plain text; blocks of { text } are joined so callers cannot send a shape OpenAI rejects.
     instructions: Array.isArray(system) ? system.map((b) => (typeof b === 'string' ? b : b.text)).join('\n\n') : system,
     input: messages.map(({ role, content }) => ({ role, content })),
@@ -69,12 +72,12 @@ export function streamText(opts, onText) {
 }
 
 // Returns parsed JSON constrained to the given JSON schema.
-export async function generateJson({ system, messages, schema, effort = 'medium', maxTokens = 16000 }) {
+export async function generateJson({ system, messages, schema, strict = false, model, effort = 'medium', maxTokens = 16000 }) {
   const text = await run(params({
-    system, messages, effort, maxTokens,
-    // Not strict: strict mode would require every field and forbid optional ones,
-    // which the summary and plan schemas use.
-    format: { type: 'json_schema', name: 'result', schema, strict: false },
+    system, messages, model, effort, maxTokens,
+    // Not strict by default: strict mode would require every field and forbid
+    // optional ones, which the summary and plan schemas use.
+    format: { type: 'json_schema', name: 'result', schema, strict },
   }));
   return JSON.parse(text);
 }

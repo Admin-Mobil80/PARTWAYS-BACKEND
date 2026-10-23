@@ -1,7 +1,7 @@
 // The AI interviewer. One function, runTurn, drives both voice and text interviews:
 // it streams the spoken reply and then updates the session's coverage state.
 import { DURATIONS, TEMPLATES, TIER_ORDER, LANGUAGES, THEMES } from './catalog.js';
-import { llmInfo, streamText, generateJson } from '../llm/index.js';
+import { llmInfo, streamText, generateJson, fastModel } from '../llm/index.js';
 import { offlineTurn } from './offline.js';
 
 const MARKER = '###STATE###';
@@ -154,7 +154,7 @@ export function applyState(session, state, plan) {
     session.coverage[id] = st;
     if (st === 'declined' && !session.declinedTopics.includes(id)) session.declinedTopics.push(id);
   }
-  session.phase = state.phase || session.phase;
+  if (['opening', 'exploring', 'closing_check', 'ended'].includes(state.phase)) session.phase = state.phase;
   session.currentTopic = valid.has(state.current_topic) ? state.current_topic : session.currentTopic;
   if (state.serious_concern) session.seriousConcernFlagged = true;
 }
@@ -225,15 +225,25 @@ export function realtimeInstructions({ session, programme, org, participant }) {
 const PROGRESS_RULES = `You track the progress of a live exit interview between an AI interviewer and a departing employee. You do not speak to anyone. From the topics and the conversation, return:
 - coverage: only topics whose status should change. "explored" when the employee has meaningfully addressed it (wherever it came up), "insufficient" when touched on only briefly, "skipped" when the interviewer or employee moved past it, "declined" when the employee did not want to discuss it.
 - current_topic: the topic id being discussed now, or null.
-- phase: "opening", "exploring", "closing_check" (the interviewer has asked whether anything was missed), or "ended" only when the interviewer has closed the interview after the employee confirmed there is nothing more to add.
+- phase: "opening", "exploring", "closing_check" (the interviewer has asked whether anything was missed), or "ended" when the interviewer's most recent turn closes the interview (thanks the employee and says goodbye or that the summary comes next), however the employee answered the closing check.
 - serious_concern: true if the employee raised harassment, discrimination, safety or wrongdoing.`;
 
+// Strict, so the smaller progress model cannot drift from the allowed values;
+// strict mode has no open-ended maps, so coverage comes back as a list.
 const PROGRESS_SCHEMA = {
   type: 'object',
   additionalProperties: false,
   required: ['coverage', 'current_topic', 'phase', 'serious_concern'],
   properties: {
-    coverage: { type: 'object', additionalProperties: { type: 'string', enum: ['explored', 'insufficient', 'skipped', 'declined'] } },
+    coverage: {
+      type: 'array',
+      items: {
+        type: 'object',
+        additionalProperties: false,
+        required: ['topic', 'status'],
+        properties: { topic: { type: 'string' }, status: { type: 'string', enum: ['explored', 'insufficient', 'skipped', 'declined'] } },
+      },
+    },
     current_topic: { type: ['string', 'null'] },
     phase: { type: 'string', enum: ['opening', 'exploring', 'closing_check', 'ended'] },
     serious_concern: { type: 'boolean' },
@@ -251,8 +261,9 @@ export async function trackProgress({ session, programme, participant }) {
   const state = await generateJson({
     system: PROGRESS_RULES,
     messages: [{ role: 'user', content: `Topics:\n${topics}\n\nConversation (most recent last):\n${convo}` }],
-    schema: PROGRESS_SCHEMA, effort: 'low', maxTokens: 1500,
+    schema: PROGRESS_SCHEMA, strict: true, model: fastModel(), effort: 'low', maxTokens: 1500,
   });
+  state.coverage = Object.fromEntries((state.coverage || []).map((c) => [c.topic, c.status]));
   applyState(session, state, plan);
   return state;
 }
