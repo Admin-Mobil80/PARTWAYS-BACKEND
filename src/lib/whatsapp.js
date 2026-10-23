@@ -31,7 +31,7 @@ export async function sendWhatsApp({ to, kind, values, token }) {
   }
   const message = {
     messaging_product: 'whatsapp',
-    to: String(to).replace(/[^\d]/g, ''),
+    to: `+${String(to).replace(/[^\d]/g, '')}`,
     type: 'template',
     template: {
       name: t.name,
