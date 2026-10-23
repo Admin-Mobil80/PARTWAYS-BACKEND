@@ -271,13 +271,26 @@ function handler(event) {
       authType: lambda.FunctionUrlAuthType.NONE,
       invokeMode: lambda.InvokeMode.RESPONSE_STREAM,
     });
+    const origin = new origins.HttpOrigin(cdk.Fn.select(2, cdk.Fn.split('/', url.url)), {
+      protocolPolicy: cloudfront.OriginProtocolPolicy.HTTPS_ONLY,
+      readTimeout: cdk.Duration.seconds(60),
+      customHeaders: { 'x-origin-verify': originVerify },
+    });
+    // The visitor's country, as CloudFront sees it, to preselect it on sign-up
+    // forms. Its own path because CloudFront's country header cannot be added
+    // to the all-viewer-headers-except-Host policy the rest of the API uses.
+    distribution.addBehavior('/api/public/country', origin, {
+      viewerProtocolPolicy: cloudfront.ViewerProtocolPolicy.HTTPS_ONLY,
+      cachePolicy: cloudfront.CachePolicy.CACHING_DISABLED,
+      originRequestPolicy: new cloudfront.OriginRequestPolicy(this, 'ViewerCountryPolicy', {
+        originRequestPolicyName: `${PREFIX}-${appName}-viewer-country`,
+        headerBehavior: cloudfront.OriginRequestHeaderBehavior.allowList('CloudFront-Viewer-Country'),
+      }),
+      responseHeadersPolicy: securityHeaders,
+    });
     distribution.addBehavior(
       '/api/*',
-      new origins.HttpOrigin(cdk.Fn.select(2, cdk.Fn.split('/', url.url)), {
-        protocolPolicy: cloudfront.OriginProtocolPolicy.HTTPS_ONLY,
-        readTimeout: cdk.Duration.seconds(60),
-        customHeaders: { 'x-origin-verify': originVerify },
-      }),
+      origin,
       {
         viewerProtocolPolicy: cloudfront.ViewerProtocolPolicy.HTTPS_ONLY,
         allowedMethods: cloudfront.AllowedMethods.ALLOW_ALL,

@@ -10,6 +10,11 @@ import { SERVICE } from '../domain/catalog.js';
 route('POST', '/api/auth/start', async (req) => startLogin(req.body?.email));
 route('POST', '/api/auth/signup', async (req) => startSignup(req.body));
 route('POST', '/api/auth/verify', async (req) => verifyLogin(req.body?.email, req.body?.code, req.body?.session));
+// Where the visitor is, from CloudFront, to preselect the country on sign-up forms.
+route('GET', '/api/public/country', async (req) => {
+  const c = String(req.headers['cloudfront-viewer-country'] || '').toUpperCase();
+  return { country: /^[A-Z]{2}$/.test(c) ? c : null };
+});
 route('GET', '/api/hr/me', async (req) => {
   const { unlimited, balance } = await creditSummary(store());
   const own = await globalStore().get('org', req.user.orgId);

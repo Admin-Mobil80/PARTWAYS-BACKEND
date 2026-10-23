@@ -82,6 +82,12 @@ test('sign-up creates a separate workspace with 3 free credits and a draft progr
   assert.ok(programmes.length >= 3, 'the demo workspace is separate');
 });
 
+test('sign-up country comes from the visitor\'s location when CloudFront knows it', async () => {
+  assert.equal((await call('GET', '/api/public/country', null, { 'cloudfront-viewer-country': 'IN' })).body.country, 'IN');
+  assert.equal((await call('GET', '/api/public/country')).body.country, null);
+  assert.equal((await call('GET', '/api/public/country', null, { 'cloudfront-viewer-country': '<x>' })).body.country, null);
+});
+
 test('workspaces are isolated between organisations', async () => {
   const saved = token;
   const other = await signUp('second@example.org', 'Second Org');
