@@ -10,6 +10,7 @@ import {
   ELEVENLABS_ZERO_RETENTION,
   GITHUB_OWNER,
   INVITE_FROM_ADDRESS,
+  WHATSAPP_PHONE_NUMBER_ID,
   HR_ALLOWED_EMAILS,
   LLM_MODEL,
   LLM_PROVIDER,
@@ -106,6 +107,7 @@ function appStacks(env: cdk.Environment): cdk.Stack[] {
         SES_ROLE_ARN: senderRoleArn,
         SES_REGION: MAIL_REGION,
         INVITE_FROM_ADDRESS,
+        WHATSAPP_PHONE_NUMBER_ID,
         SITE_URL: `https://${PORTAL_DOMAINS[0]}`,
         TABLE_NAME: data.table.tableName,
         SECRETS_ARN: data.providerSecrets.secretArn,
@@ -120,6 +122,13 @@ function appStacks(env: cdk.Environment): cdk.Stack[] {
         data.table.grantReadWriteData(fn);
         data.providerSecrets.grantRead(fn);
         fn.addToRolePolicy(new iam.PolicyStatement({ actions: ['sts:AssumeRole'], resources: [senderRoleArn] }));
+        // WhatsApp invitations and reminders, from the linked PartWays number only.
+        if (WHATSAPP_PHONE_NUMBER_ID) {
+          fn.addToRolePolicy(new iam.PolicyStatement({
+            actions: ['social-messaging:SendWhatsAppMessage'],
+            resources: [`arn:aws:social-messaging:${REGION}:${ACCOUNT}:phone-number-id/${WHATSAPP_PHONE_NUMBER_ID.replace(/^phone-number-id-/, '')}`],
+          }));
+        }
         // Creates an organisation's people on sign-up and team changes; cannot delete anyone.
         fn.addToRolePolicy(
           new iam.PolicyStatement({

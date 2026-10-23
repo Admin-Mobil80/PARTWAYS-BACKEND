@@ -31,6 +31,11 @@ export const CREATE_GITHUB_OIDC_PROVIDER = true;
 export const SES_FROM_ADDRESS = 'no-reply@partways.org';
 /** Sender for interview invitations and reminders. */
 export const INVITE_FROM_ADDRESS = 'invitations@partways.org';
+
+// WhatsApp invitations go through AWS End User Messaging Social, from the number
+// linked in this account (Mobil80 WABA 1735460610853148, +91 78995 87003, "PartWays").
+// Empty disables real sending: WhatsApp deliveries are then recorded as simulated.
+export const WHATSAPP_PHONE_NUMBER_ID = 'phone-number-id-d850bee41b214f81a9a8a04e3cbef100';
 export const MAIL_DOMAIN = 'partways.org';
 /** Custom MAIL FROM, so SPF aligns with partways.org. */
 export const MAIL_FROM_DOMAIN = `bounce.${MAIL_DOMAIN}`;

@@ -11,6 +11,7 @@ import { TENURE_BANDS, ROLE_LEVELS, DURATIONS, DIAL_CODES } from '../domain/cata
 import { DEFAULT_MESSAGES } from '../domain/programmes.js';
 import { assignInterviewId, consumeCredit, creditSummary } from '../domain/workspaces.js';
 import { sendEmail } from '../lib/mailer.js';
+import { sendWhatsApp, whatsappLive, whatsappText } from '../lib/whatsapp.js';
 
 // A local number (starting with 0) takes the organisation's country code.
 export function normaliseMobile(raw, dial = '44') {
@@ -32,6 +33,7 @@ export function maskEmail(e) {
 }
 
 const CHANNEL_LABEL = { email: 'Email', whatsapp: 'WhatsApp' };
+const CHANNEL_NOUN = { email: 'email', whatsapp: 'WhatsApp message' };
 export const channelsOf = (p) => [p.email && 'email', p.mobile && 'whatsapp'].filter(Boolean);
 const channelText = (channels) => channels.map((c) => CHANNEL_LABEL[c]).join(' and ');
 
@@ -52,9 +54,19 @@ export function maskMobile(m) {
   return `${cc} ••• ••• ${s.slice(-3)}`;
 }
 
+// The values a message fills in, shared by email and the WhatsApp template.
+function messageValues(p, programme, org) {
+  return {
+    org: org.shortName || org.name,
+    interviewId: p.interviewId || '',
+    minutes: DURATIONS[programme.durations.includes('standard') ? 'standard' : programme.durations[0]].minutes,
+    deadline: new Date(p.invitation.deadline).toLocaleDateString('en-GB', { day: 'numeric', month: 'long' }),
+  };
+}
+
 export function messageFor(p, programme, org, kind, origin) {
   const tpl = (programme.messages || DEFAULT_MESSAGES)[kind] || DEFAULT_MESSAGES[kind];
-  const minutes = DURATIONS[programme.durations.includes('standard') ? 'standard' : programme.durations[0]].minutes;
+  const { minutes } = messageValues(p, programme, org);
   const link = `${origin || ''}/interview/#/i/${p.invitation.token}`;
   return tpl.replaceAll(' {firstName}', '').replaceAll('{firstName}', '').replaceAll('{interviewId}', p.interviewId || '').replaceAll('{org}', org.shortName || org.name)
     .replaceAll('{minutes}', minutes).replaceAll('{deadline}', new Date(p.invitation.deadline).toLocaleDateString('en-GB', { day: 'numeric', month: 'long' }))
@@ -256,7 +268,8 @@ function previews(p, programme, org, kind, origin) {
   const text = messageFor(p, programme, org, kind, origin);
   return channelsOf(p).map((channel) => (channel === 'email'
     ? { channel, to: maskEmail(p.email), subject: subjectFor(kind, org), text, live: !org.demo }
-    : { channel, to: maskMobile(p.mobile), text, live: false }));
+    // WhatsApp sends Meta's approved template, so its wording is fixed.
+    : { channel, to: maskMobile(p.mobile), text: whatsappText(kind, messageValues(p, programme, org)), live: !org.demo && whatsappLive() }));
 }
 
 route('GET', '/api/hr/participants/:id/message', async (req) => {
@@ -272,8 +285,8 @@ route('GET', '/api/hr/participants/:id/message', async (req) => {
   };
 }, { auth: true });
 
-// Sends on every channel the person has. Email goes through SES; WhatsApp is
-// recorded but not delivered until a WhatsApp account is connected. In the
+// Sends on every channel the person has. Email goes through SES; WhatsApp goes
+// through AWS End User Messaging from the PartWays number. In the
 // demonstration workspace nothing is delivered. One credit per invitation,
 // charged only once at least one channel has gone out.
 async function sendMessage(p, kind, req) {
@@ -304,6 +317,14 @@ async function sendMessage(p, kind, req) {
         console.error('Invitation email failed', err);
         deliveries.push({ channel: 'email', kind, at, simulated: false, failed: true });
       }
+    } else if (m.channel === 'whatsapp' && m.live) {
+      try {
+        const r = await sendWhatsApp({ to: p.mobile, kind, values: messageValues(p, programme, org), token: p.invitation.token });
+        deliveries.push({ channel: 'whatsapp', kind, at, simulated: r.simulated, messageId: r.messageId || null });
+      } catch (err) {
+        console.error('Invitation WhatsApp failed', err);
+        deliveries.push({ channel: 'whatsapp', kind, at, simulated: false, failed: true });
+      }
     } else {
       deliveries.push({ channel: m.channel, kind, at, simulated: true });
     }
@@ -312,7 +333,7 @@ async function sendMessage(p, kind, req) {
   p.invitation.deliveries = [...(p.invitation.deliveries || []), ...deliveries];
   if (!sent.length) {
     await store().put('participant', p);
-    fail(502, 'The email could not be sent, so nothing was charged. Please try again in a few minutes.');
+    fail(502, `The ${deliveries.map((d) => CHANNEL_NOUN[d.channel]).join(' and ')} could not be sent, so nothing was charged. Please try again in a few minutes.`);
   }
   if (kind === 'invitation') {
     p.invitation.credit = (await consumeCredit(store(), p))?.id || null;
@@ -327,7 +348,8 @@ async function sendMessage(p, kind, req) {
   const delivered = sent.filter((d) => !d.simulated).map((d) => CHANNEL_LABEL[d.channel]);
   const notes = [];
   if (delivered.length) notes.push(`Sent by ${delivered.join(' and ')}.`);
-  if (deliveries.some((d) => d.failed)) notes.push('The email could not be sent; try a reminder later.');
+  const failed = deliveries.filter((d) => d.failed).map((d) => CHANNEL_NOUN[d.channel]);
+  if (failed.length) notes.push(`The ${failed.join(' and ')} could not be sent; try a reminder later.`);
   if (org.demo) notes.push(`This is the demonstration workspace, so the ${kind} was recorded but not delivered.`);
   else if (sent.some((d) => d.channel === 'whatsapp')) notes.push(`WhatsApp is not connected yet, so the WhatsApp ${kind} was recorded but not delivered.`);
   else if (sent.some((d) => d.channel === 'email' && d.simulated)) notes.push(`Email is not configured here, so the ${kind} was recorded but not delivered.`);

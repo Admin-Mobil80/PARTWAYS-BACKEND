@@ -1,0 +1,18 @@
+{
+  "name": "partways_interview_ready",
+  "language": "en",
+  "category": "UTILITY",
+  "components": [
+    {
+      "type": "BODY",
+      "text": "Your PartWays exit interview for {{1}} is ready.\n\nInterview Id: {{2}}\nLength: about {{3}} minutes, by voice or by typing\nOpen until: {{4}}\n\nYour answers are de-identified before they are shared. Use the button below to open your interview.",
+      "example": { "body_text": [["Calder & Finch Logistics", "PW-7KQ2-M4XD", "10-15", "10 November"]] }
+    },
+    {
+      "type": "BUTTONS",
+      "buttons": [
+        { "type": "URL", "text": "Open my interview", "url": "https://partways.org/i/{{1}}", "example": ["https://partways.org/i/m7vnhgqkt4t9j8wzav3smh"] }
+      ]
+    }
+  ]
+}

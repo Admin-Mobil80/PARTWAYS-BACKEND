@@ -130,6 +130,9 @@ export class StaticSiteStack extends cdk.Stack {
               code: cloudfront.FunctionCode.fromInline(`
 function handler(event) {
   var r = event.request;
+  // Short invitation links (WhatsApp buttons cannot carry a '#'): /i/<token> opens the interview.
+  var m = r.uri.match(/^\\/i\\/([A-Za-z0-9_-]{6,64})\\/?$/);
+  if (m) return { statusCode: 302, statusDescription: 'Found', headers: { location: { value: '/interview/#/i/' + m[1] }, 'cache-control': { value: 'no-store' } } };
   if (r.uri.endsWith('/')) r.uri += 'index.html';
   else if (r.uri.indexOf('.') === -1) r.uri += '/index.html';
   return r;
