@@ -2,7 +2,7 @@
 import { route, fail } from '../lib/http.js';
 import { store, must, nowIso } from '../lib/data.js';
 import { newId } from '../lib/ids.js';
-import { DEFAULT_TOPICS, TEMPLATES, framingOf, DURATIONS, LANGUAGES, THEMES, DIMENSIONS } from '../domain/catalog.js';
+import { DEFAULT_TOPICS, TEMPLATES, framingOf, DIAL_CODES, DURATIONS, LANGUAGES, THEMES, DIMENSIONS } from '../domain/catalog.js';
 import { proposePlan, analysePlan, diffGuides } from '../domain/planner.js';
 import { createSession } from './employee.js';
 import { llmInfo } from '../llm/index.js';
@@ -30,7 +30,7 @@ async function programmeSummary(p, participants, sessions) {
 route('GET', '/api/hr/meta', async () => ({
   templates: TEMPLATES, durations: DURATIONS, languages: LANGUAGES, dimensions: DIMENSIONS,
   themes: Object.fromEntries(Object.entries(THEMES).map(([k, v]) => [k, { label: v.label, description: v.description }])),
-  defaultTopics: DEFAULT_TOPICS, llm: llmInfo(),
+  defaultTopics: DEFAULT_TOPICS, llm: llmInfo(), dialCodes: DIAL_CODES,
 }), { auth: true });
 
 route('GET', '/api/hr/programmes', async () => {

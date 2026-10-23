@@ -15,6 +15,7 @@ delete process.env.TABLE_NAME;
 delete process.env.HR_ALLOWED_EMAILS;
 
 const { handle } = await import('../src/lib/app.js');
+const { normaliseMobile } = await import('../src/routes/participants.js');
 
 let token;
 // HR calls go to the signed-in organisation's demonstration workspace unless a test says otherwise.
@@ -100,6 +101,14 @@ test('a Custom programme carries its own description of the departures', async (
     const { programme: g } = await hr('POST', '/api/hr/programmes', { name: 'General', template: 'general', framing: 'ignored' });
     assert.equal(g.framing, undefined, 'only Custom programmes keep their own description');
   });
+});
+
+test('a local mobile number takes the organisation\'s country code', () => {
+  assert.equal(normaliseMobile('098450 04028', '91'), '+919845004028');
+  assert.equal(normaliseMobile('07700 900123'), '+447700900123', 'the UK is the default');
+  assert.equal(normaliseMobile('+49 151 00900801', '91'), '+4915100900801', 'an international number keeps its own code');
+  assert.equal(normaliseMobile('0091 98450 04028', '44'), '+919845004028');
+  assert.equal(normaliseMobile('12345', '91'), null);
 });
 
 test('workspaces are isolated between organisations', async () => {

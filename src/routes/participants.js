@@ -7,15 +7,16 @@
 import { route, fail } from '../lib/http.js';
 import { store, must, nowIso } from '../lib/data.js';
 import { newId, newToken } from '../lib/ids.js';
-import { TENURE_BANDS, ROLE_LEVELS, DURATIONS } from '../domain/catalog.js';
+import { TENURE_BANDS, ROLE_LEVELS, DURATIONS, DIAL_CODES } from '../domain/catalog.js';
 import { DEFAULT_MESSAGES } from '../domain/programmes.js';
 import { assignInterviewId, consumeCredit, creditSummary } from '../domain/workspaces.js';
 import { sendEmail } from '../lib/mailer.js';
 
-export function normaliseMobile(raw) {
+// A local number (starting with 0) takes the organisation's country code.
+export function normaliseMobile(raw, dial = '44') {
   let m = String(raw || '').replace(/[\s\-().]/g, '');
   if (m.startsWith('00')) m = `+${m.slice(2)}`;
-  if (/^0\d{9,10}$/.test(m)) m = `+44${m.slice(1)}`;
+  if (/^0\d{6,13}$/.test(m)) m = `+${dial}${m.replace(/^0+/, '')}`;
   return /^\+[1-9]\d{7,14}$/.test(m) ? m : null;
 }
 
@@ -96,17 +97,18 @@ route('GET', '/api/hr/participants/:id', async (req) => {
 
 // Contacts already invited to a programme, so nobody is invited twice by either channel.
 async function existingContacts(programmeId) {
-  const live = (await store().list('participant')).filter((p) => p.programmeId === programmeId && p.status !== 'cancelled');
-  return { mobiles: new Set(live.map((p) => normaliseMobile(p.mobile)).filter(Boolean)), emails: new Set(live.map((p) => p.email).filter(Boolean)) };
+  const [all, org] = await Promise.all([store().list('participant'), store().get('org', 'org')]);
+  const live = all.filter((p) => p.programmeId === programmeId && p.status !== 'cancelled');
+  return { dial: DIAL_CODES[org?.country] || '44', mobiles: new Set(live.map((p) => normaliseMobile(p.mobile)).filter(Boolean)), emails: new Set(live.map((p) => p.email).filter(Boolean)) };
 }
 const noContacts = () => ({ mobiles: new Set(), emails: new Set() });
 
 function validateRow(row, existing, seen) {
   const errors = [], warnings = [];
-  const mobile = row.mobile ? normaliseMobile(row.mobile) : null;
+  const mobile = row.mobile ? normaliseMobile(row.mobile, existing.dial) : null;
   const email = row.email ? normaliseEmailAddress(row.email) : null;
   if (!row.mobile && !row.email) errors.push('Add an email address, a mobile number, or both.');
-  if (row.mobile && !mobile) errors.push('Mobile number is not valid. Use international format, for example +44 7700 900123.');
+  if (row.mobile && !mobile) errors.push('Mobile number is not valid. Use international format, for example +44 7700 900123, or a local number starting with 0.');
   if (row.email && !email) errors.push('Email address is not valid.');
   let duplicate = null;
   if ((mobile && existing.mobiles.has(mobile)) || (email && existing.emails.has(email))) duplicate = `Already invited to this programme with this ${mobile && existing.mobiles.has(mobile) ? 'mobile number' : 'email address'}.`;
