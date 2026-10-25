@@ -5,7 +5,7 @@ import { startLogin, startSignup, verifyLogin } from '../auth/index.js';
 import { creditSummary } from '../domain/workspaces.js';
 import { resetDemo, resetEvaluation } from '../domain/demo.js';
 import { createParticipant } from './participants.js';
-import { SERVICE } from '../domain/catalog.js';
+import { SERVICE, offersLanguage } from '../domain/catalog.js';
 
 route('POST', '/api/auth/start', async (req) => startLogin(req.body?.email));
 route('POST', '/api/auth/signup', async (req) => startSignup(req.body));
@@ -66,7 +66,7 @@ route('POST', '/api/hr/demo/try', async (req) => {
   const seg = persona?.segment || { businessUnit: 'Operations', function: 'Transport planning', location: 'Leeds', tenureBand: '1–3 years', roleLevel: 'Individual contributor' };
   const p = await createParticipant(programme, {
     mobile: `+44 7700 900${String(900 + (n % 100)).padStart(3, '0')}`,
-    preferredLanguage: req.body?.language || 'en', departureDate: new Date(Date.now() + 14 * 864e5).toISOString().slice(0, 10), ...seg,
+    preferredLanguage: offersLanguage(req.body?.language) ? req.body.language : 'en', departureDate: new Date(Date.now() + 14 * 864e5).toISOString().slice(0, 10), ...seg,
   }, 'evaluation');
   p.invitation.status = 'sent';
   p.invitation.sentAt = nowIso();

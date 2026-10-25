@@ -24,7 +24,7 @@ export function newProgramme({ name, template = 'general', framing = '', org }) 
   const short = org?.shortName || org?.name || 'your organisation';
   return {
     id: newId('prog'), name, template, ...(template === 'custom' ? { framing } : {}), status: 'draft',
-    languages: ['en', 'de', 'fr'], modes: ['ai_voice', 'ai_text'], durations: ['quick', 'standard', 'in_depth'],
+    languages: ['en'], modes: ['ai_voice', 'ai_text'], durations: ['quick', 'standard', 'in_depth'],
     reminder: { enabled: true, afterDays: 4, max: 2 },
     feedbackNotice: feedbackNoticeFor(short),
     completionMessage: 'Thank you. Your feedback has been submitted.',

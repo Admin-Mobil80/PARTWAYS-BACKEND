@@ -279,6 +279,18 @@ test('employee interview: text conversation, review, submit; submitting is final
   assert.equal(after.current.participation.submitted, before.current.participation.submitted);
 });
 
+test('interviews are offered in English only for now', async () => {
+  const tryRes = await hr('POST', '/api/hr/demo/try', { persona: 'workload', programmeId: 'prog_general', language: 'de' });
+  const tokenInv = tryRes.link.split('/i/')[1];
+  const inv = (await call('GET', `/api/invite/${tokenInv}`)).body;
+  assert.deepEqual(inv.programme.languages.map((l) => l.code), ['en']);
+  assert.equal(inv.participant.preferredLanguage, 'en');
+  const sess = await call('POST', `/api/invite/${tokenInv}/session`, { mode: 'ai_text', language: 'fr', duration: 'quick' });
+  const { id, accessToken } = sess.body;
+  const s = (await call('GET', `/api/session/${id}`, null, { 'x-session-token': accessToken })).body.session;
+  assert.equal(s.language, 'en');
+});
+
 test('preview interviews never reach findings and cannot be submitted', async () => {
   const before = await insights({ programmeId: 'prog_general', period: '2026-Q4', population: 'all' });
   const pv = await hr('POST', '/api/hr/programmes/prog_general/preview', { mode: 'ai_text' });

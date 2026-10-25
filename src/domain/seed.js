@@ -82,7 +82,8 @@ export function generateDemoData({ now = '2026-10-20T08:00:00Z' } = {}) {
     let roleLevel = pick(['Individual contributor', 'Individual contributor', 'Individual contributor', 'Team lead', 'Manager']);
     if (archetype === 'leadership') roleLevel = pick(['Manager', 'Senior leader']);
     if (programmeId === 'prog_depots' || programmeId === 'prog_early') roleLevel = 'Individual contributor';
-    const lang = location === 'Hamburg' ? (chance(0.85) ? 'de' : 'en') : location === 'Lyon' ? (chance(0.85) ? 'fr' : 'en') : 'en';
+    // English only for now; German and French interviews come back with multi-language support.
+    const lang = 'en';
     return { businessUnit: unit, function: fn, location, tenureBand, roleLevel, lang };
   }
 

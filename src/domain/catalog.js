@@ -6,11 +6,13 @@ export const SERVICE = {
   description: 'PartWays is an independent interviewing service. It conducts exit interviews on behalf of the organisations that commission them.',
 };
 
+// English only for now. German and French return with multi-language support: add
+// { code: 'de', label: 'German', native: 'Deutsch' } and { code: 'fr', label: 'French',
+// native: 'Français' } back here. Their interviewer and employee-page strings are kept.
 export const LANGUAGES = [
   { code: 'en', label: 'English', native: 'English' },
-  { code: 'de', label: 'German', native: 'Deutsch' },
-  { code: 'fr', label: 'French', native: 'Français' },
 ];
+export const offersLanguage = (code) => LANGUAGES.some((l) => l.code === code);
 
 export const DURATIONS = {
   quick: { label: 'Quick', minutes: '5–7', maxTopics: 4 },

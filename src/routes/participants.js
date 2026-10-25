@@ -7,7 +7,7 @@
 import { route, fail } from '../lib/http.js';
 import { store, must, nowIso } from '../lib/data.js';
 import { newId, newToken } from '../lib/ids.js';
-import { TENURE_BANDS, ROLE_LEVELS, DURATIONS, DIAL_CODES } from '../domain/catalog.js';
+import { TENURE_BANDS, ROLE_LEVELS, DURATIONS, DIAL_CODES, offersLanguage } from '../domain/catalog.js';
 import { DEFAULT_MESSAGES } from '../domain/programmes.js';
 import { assignInterviewId, consumeCredit, creditSummary } from '../domain/workspaces.js';
 import { sendEmail } from '../lib/mailer.js';
@@ -131,7 +131,7 @@ function validateRow(row, existing, seen) {
   if (departureDate === undefined) errors.push('Departure date is not a date. Use YYYY-MM-DD or DD/MM/YYYY.');
   if (row.tenureBand && !TENURE_BANDS.includes(row.tenureBand)) warnings.push(`Tenure band “${row.tenureBand}” is not one of the standard bands; it will be kept as written.`);
   if (row.roleLevel && !ROLE_LEVELS.includes(row.roleLevel)) warnings.push(`Role level “${row.roleLevel}” is not standard; it will be kept as written.`);
-  const lang = ['en', 'de', 'fr'].includes(String(row.language || '').toLowerCase()) ? String(row.language).toLowerCase() : 'en';
+  const lang = offersLanguage(String(row.language || '').toLowerCase()) ? String(row.language).toLowerCase() : 'en';
   if (row.language && lang !== String(row.language).toLowerCase()) warnings.push(`Language “${row.language}” is not available; English will be offered first.`);
   return {
     input: row, errors, warnings, duplicate,

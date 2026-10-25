@@ -2,7 +2,7 @@
 import { route, fail } from '../lib/http.js';
 import { store, must, findParticipantByToken, nowIso } from '../lib/data.js';
 import { newId, newToken } from '../lib/ids.js';
-import { SERVICE, LANGUAGES, DURATIONS, SECTIONS, THEMES } from '../domain/catalog.js';
+import { SERVICE, LANGUAGES, offersLanguage, DURATIONS, SECTIONS, THEMES } from '../domain/catalog.js';
 import { runTurn, planFor, guideOf, realtimeInstructions, trackProgress } from '../domain/interviewer.js';
 import { summarise } from '../domain/summariser.js';
 import { llmInfo, realtimeLive, createRealtimeKey } from '../llm/index.js';
@@ -125,7 +125,9 @@ route('POST', '/api/invite/:token/new-link', async (req) => {
 
 async function createSession({ programme, participant, body, population, accessToken }) {
   const mode = ['ai_voice', 'ai_text'].includes(body.mode) ? body.mode : 'ai_text';
-  const language = programme.languages.includes(body.language) ? body.language : programme.languages[0];
+  // Programmes created earlier may still list German or French; only languages offered now count.
+  const offered = programme.languages.filter(offersLanguage);
+  const language = offered.includes(body.language) ? body.language : offered[0] || 'en';
   const duration = programme.durations.includes(body.duration) ? body.duration : programme.durations.includes('standard') ? 'standard' : programme.durations[0];
   const guide = body.guide || { version: programme.activeVersion, objectives: programme.objectives, topics: programme.topics };
   const s = {

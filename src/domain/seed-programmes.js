@@ -7,7 +7,7 @@ const topic = (id, overrides = {}) => {
 };
 
 const common = {
-  languages: ['en', 'de', 'fr'],
+  languages: ['en'],
   modes: ['ai_voice', 'ai_text'],
   durations: ['quick', 'standard', 'in_depth'],
   reminder: { enabled: true, afterDays: 4, max: 2 },
