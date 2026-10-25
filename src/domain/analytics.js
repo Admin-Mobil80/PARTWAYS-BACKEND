@@ -152,7 +152,7 @@ function filterWithoutSession(filters) {
 }
 
 function minimumFor(programmes) {
-  return Math.max(...programmes.map((p) => p.reportingMinimum || 5), 1);
+  return Math.max(...programmes.map((p) => p.reportingMinimum || 3), 1);
 }
 
 function reportingModeFor(programmes) {
