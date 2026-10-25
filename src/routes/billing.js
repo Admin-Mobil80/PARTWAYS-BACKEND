@@ -65,7 +65,7 @@ route('POST', '/api/hr/billing/confirm', async (req) => {
   const session = await stripe().checkout.sessions.retrieve(id);
   if (session.metadata?.orgId !== req.user.orgId) fail(403, 'This checkout belongs to another workspace.');
   if (session.payment_status !== 'paid') return { status: 'pending', ...(await creditSummary(store())) };
-  const { entry, duplicate } = await grantPurchase(store(), { ref: session.id, packId: session.metadata.packId, amountUsd: session.amount_total / 100 });
+  const { entry, duplicate } = await grantPurchase(store(), { ref: session.id, packId: session.metadata.packId, amountUsd: session.amount_total / 100, by: req.user.email });
   return { status: 'paid', entry, duplicate, ...(await creditSummary(store())) };
 }, { auth: true });
 
@@ -73,7 +73,7 @@ route('POST', '/api/hr/billing/simulate', async (req) => {
   await ownWorkspace();
   if (stripe()) fail(409, 'Payments are configured, so purchases go through Stripe Checkout.');
   if (!PACKS[req.body?.pack]) fail(400, 'Choose a credit pack.');
-  const { entry } = await grantPurchase(store(), { ref: newId('sim'), packId: req.body.pack, simulated: true });
+  const { entry } = await grantPurchase(store(), { ref: newId('sim'), packId: req.body.pack, simulated: true, by: req.user.email });
   return { entry, ...(await creditSummary(store())) };
 }, { auth: true });
 
@@ -89,7 +89,7 @@ route('POST', '/api/stripe/webhook', async (req) => {
     const s = event.data.object;
     const orgId = s.metadata?.orgId;
     if (s.payment_status === 'paid' && orgId && PACKS[s.metadata?.packId] && (await getStore('global').get('org', orgId))) {
-      await grantPurchase(getStore(orgId), { ref: s.id, packId: s.metadata.packId, amountUsd: s.amount_total / 100 });
+      await grantPurchase(getStore(orgId), { ref: s.id, packId: s.metadata.packId, amountUsd: s.amount_total / 100, by: s.customer_details?.email || s.customer_email || null });
     }
   }
   return { received: true };

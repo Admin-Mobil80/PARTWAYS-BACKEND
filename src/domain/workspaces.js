@@ -97,23 +97,23 @@ export async function creditSummary(store) {
   return { unlimited: !!org?.demo, balance, ledger };
 }
 
-export async function consumeCredit(store, participant) {
+export async function consumeCredit(store, participant, by = null) {
   const { unlimited, balance } = await creditSummary(store);
   if (unlimited) return null;
   if (balance < 1) fail(402, 'You have no interview credits left. Buy credits to send more invitations.', { code: 'no_credits' });
-  const entry = { id: newId('led'), at: nowIso(), kind: 'invite', delta: -1, interviewId: participant.interviewId, note: `Invitation ${participant.interviewId}` };
+  const entry = { id: newId('led'), at: nowIso(), kind: 'invite', delta: -1, interviewId: participant.interviewId, note: `Invitation ${participant.interviewId}`, ...(by ? { by } : {}) };
   await store.put('ledger', entry);
   return entry;
 }
 
 // Idempotent: a purchase is recorded once however many times it is confirmed.
-export async function grantPurchase(store, { ref, packId, simulated = false, amountUsd }) {
+export async function grantPurchase(store, { ref, packId, simulated = false, amountUsd, by = null }) {
   const pack = PACKS[packId];
   if (!pack) fail(400, 'Unknown credit pack.');
   const id = `purchase_${ref}`;
   const existing = await store.get('ledger', id);
   if (existing) return { entry: existing, duplicate: true };
-  const entry = { id, at: nowIso(), kind: 'purchase', delta: pack.credits, packId, amountUsd: amountUsd ?? pack.usd, simulated, note: `${pack.credits} credits${simulated ? ' (test purchase)' : ''}` };
+  const entry = { id, at: nowIso(), kind: 'purchase', delta: pack.credits, packId, amountUsd: amountUsd ?? pack.usd, simulated, note: `${pack.credits} credits${simulated ? ' (test purchase)' : ''}`, ...(by ? { by } : {}) };
   await store.put('ledger', entry);
   return { entry, duplicate: false };
 }

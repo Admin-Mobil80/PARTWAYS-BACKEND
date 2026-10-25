@@ -336,7 +336,7 @@ async function sendMessage(p, kind, req) {
     fail(502, `The ${deliveries.map((d) => CHANNEL_NOUN[d.channel]).join(' and ')} could not be sent, so nothing was charged. Please try again in a few minutes.`);
   }
   if (kind === 'invitation') {
-    p.invitation.credit = (await consumeCredit(store(), p))?.id || null;
+    p.invitation.credit = (await consumeCredit(store(), p, req.user?.email))?.id || null;
     p.invitation.status = 'sent';
     p.invitation.sentAt = at;
   } else {

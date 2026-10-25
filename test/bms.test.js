@@ -87,6 +87,25 @@ test('credit adjustments need a reason, cannot go below zero, and are audited', 
   assert.equal(detail.audit[0].by, 'root@partways.test');
 });
 
+test('the audit log includes organisations\' credit activity with balances', async () => {
+  const hr = (method, p, body) => website({ ...req(method, p, body, hrToken), headers: { authorization: `Bearer ${hrToken}`, 'x-workspace': 'own' } });
+  const bought = await hr('POST', '/api/hr/billing/simulate', { pack: 'pack_10' });
+  assert.equal(bought.status, 200, JSON.stringify(bought.body));
+  const { entries } = (await bms(req('GET', '/api/bms/audit', null, root))).body;
+  const acme = entries.filter((e) => e.orgId === orgId);
+  const free = acme.find((e) => e.action === 'credits_free');
+  assert.equal(free.delta, 3);
+  assert.equal(free.balanceAfter, 3);
+  const purchase = acme.find((e) => e.action === 'credits_bought');
+  assert.equal(purchase.delta, 10);
+  assert.equal(purchase.by, 'owner@acme.test');
+  assert.equal(purchase.simulated, true);
+  assert.equal(purchase.balanceAfter, 18, 'after the free 3 and the 5 added by PartWays');
+  // The manual adjustment appears once, as the BMS change with its reason.
+  assert.equal(acme.filter((e) => e.action === 'credits_adjusted').length, 1);
+  assert.ok(entries.every((e, i) => i === 0 || entries[i - 1].at >= e.at), 'newest first');
+});
+
 test('only the root manages the team; removal ends access at once', async () => {
   assert.equal((await bms(req('POST', '/api/bms/team', { email: 'ops@partways.test' }, root))).status, 200);
   const ops = await bmsSignIn('ops@partways.test');

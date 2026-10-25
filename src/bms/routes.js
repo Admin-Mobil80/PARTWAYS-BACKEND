@@ -160,7 +160,25 @@ route('DELETE', '/api/bms/team/:email', async (req) => {
 }, { auth: true });
 
 // --- Audit log ---------------------------------------------------------------
+// BMS changes plus every organisation's credit activity: free credits on sign-up,
+// purchases and credits used by invitations. Manual adjustments come from the BMS
+// entries, which also hold the reason. Each credit line carries the balance after it.
+const LEDGER_ACTION = { free_grant: 'credits_free', purchase: 'credits_bought', invite: 'credits_used' };
 route('GET', '/api/bms/audit', async () => {
-  const entries = (await g().list('bmsaudit')).sort((a, b) => b.at.localeCompare(a.at)).slice(0, 200);
+  const [bmsEntries, orgs] = await Promise.all([g().list('bmsaudit'), g().list('org')]);
+  const credit = (await Promise.all(orgs.map(async (o) => {
+    const ledger = (await getStore(o.id).list('ledger')).sort((a, b) => a.at.localeCompare(b.at));
+    let balance = 0;
+    return ledger.map((e) => {
+      balance += e.delta;
+      if (!LEDGER_ACTION[e.kind]) return null;
+      return {
+        id: `${o.id}_${e.id}`, at: e.at, by: e.by || null, action: LEDGER_ACTION[e.kind], orgId: o.id, orgName: o.name,
+        delta: e.delta, balanceAfter: balance, interviewId: e.interviewId || null, packId: e.packId || null,
+        amountUsd: e.amountUsd ?? null, simulated: !!e.simulated,
+      };
+    }).filter(Boolean);
+  }))).flat();
+  const entries = [...bmsEntries, ...credit].sort((a, b) => b.at.localeCompare(a.at)).slice(0, 500);
   return { entries };
 }, { auth: true });
