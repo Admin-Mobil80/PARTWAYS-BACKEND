@@ -178,6 +178,14 @@ export const framingOf = (programme) => (programme?.template === 'custom' && Str
 
 export const TIER_ORDER = { quick: 0, standard: 1, in_depth: 2 };
 
+// Results for any group with fewer submitted responses are hidden, so no one can
+// be singled out. Fixed for every programme: 3 also lets a new organisation see a
+// first report from its 3 free interviews.
+export const REPORTING_MINIMUM = 3;
+// Findings are always aggregate: counts, themes and summaries, never individual
+// quotes or paraphrases. Fixed for every programme.
+export const REPORTING_MODE = 'aggregate';
+
 // International dialling codes (ITU-T E.164) by ISO country, for mobile numbers.
 // The North American Numbering Plan countries share +1; their numbers include the area code.
 export const DIAL_CODES = Object.fromEntries(`AD376 AE971 AF93 AG1 AI1 AL355 AM374 AO244 AR54 AT43 AU61 AW297 AZ994 BA387 BB1 BD880 BE32 BF226 BG359 BH973

@@ -77,8 +77,8 @@ test('sign-up creates a separate workspace with 3 free credits and a draft progr
     const { programmes } = await hr('GET', '/api/hr/programmes');
     assert.equal(programmes.length, 1);
     assert.equal(programmes[0].status, 'draft');
-    const first = (await hr('GET', `/api/hr/programmes/${programmes[0].id}`)).programme;
-    assert.equal(first.reportingMinimum, 3, 'the 3 free interviews are enough for a first report');
+    const { REPORTING_MINIMUM } = await import('../src/domain/catalog.js');
+    assert.equal(REPORTING_MINIMUM, 3, 'the 3 free interviews are enough for a first report');
     assert.equal((await call('POST', '/api/hr/demo/reset', { scope: 'all' })).status, 409, 'own data can never be reset as demo data');
   });
   const { programmes } = await hr('GET', '/api/hr/programmes');

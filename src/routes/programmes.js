@@ -21,7 +21,7 @@ async function programmeSummary(p, participants, sessions) {
   const processing = sessions.filter((s) => s.programmeId === p.id && s.status === 'submitted' && !s.summary).length;
   return {
     id: p.id, name: p.name, description: p.description, template: p.template, framing: p.framing, status: p.status,
-    activeVersion: p.activeVersion, hasDraft: !!p.draft, reportingMode: p.reportingMode, objectives: p.objectives.length,
+    activeVersion: p.activeVersion, hasDraft: !!p.draft, objectives: p.objectives.length,
     counts: { participants: mine.length, ...status }, processing, createdAt: p.createdAt,
     demoParticipants: mine.filter((x) => x.population === 'demo').length, evaluationParticipants: mine.filter((x) => x.population === 'evaluation').length,
   };
@@ -83,8 +83,6 @@ route('PUT', '/api/hr/programmes/:id/settings', async (req) => {
   if (Array.isArray(b.languages)) { const l = b.languages.filter((x) => LANGUAGES.some((y) => y.code === x)); if (!l.length) fail(400, 'Choose at least one language.'); p.languages = l; }
   if (Array.isArray(b.modes)) { const m = b.modes.filter((x) => ['ai_voice', 'ai_text'].includes(x)); if (!m.length) fail(400, 'Choose at least one interview format.'); p.modes = m; }
   if (Array.isArray(b.durations)) { const d = b.durations.filter((x) => DURATIONS[x]); if (!d.length) fail(400, 'Choose at least one interview length.'); p.durations = d; }
-  if (b.reportingMode) p.reportingMode = b.reportingMode === 'aggregate' ? 'aggregate' : 'individual';
-  if (b.reportingMinimum !== undefined) { const n = Number(b.reportingMinimum); if (!(n >= 3 && n <= 50)) fail(400, 'The reporting minimum must be between 3 and 50.'); p.reportingMinimum = n; }
   if (b.reminder) p.reminder = { enabled: !!b.reminder.enabled, afterDays: Math.max(1, Math.min(14, Number(b.reminder.afterDays) || 4)), max: Math.max(0, Math.min(3, Number(b.reminder.max) || 2)) };
   if (b.messages) p.messages = { invitation: str(b.messages.invitation) || DEFAULT_MESSAGES.invitation, reminder: str(b.messages.reminder) || DEFAULT_MESSAGES.reminder };
   p.updatedAt = nowIso();

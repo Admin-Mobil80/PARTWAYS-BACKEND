@@ -28,7 +28,7 @@ export function newProgramme({ name, template = 'general', framing = '', org }) 
     reminder: { enabled: true, afterDays: 4, max: 2 },
     feedbackNotice: feedbackNoticeFor(short),
     completionMessage: 'Thank you. Your feedback has been submitted.',
-    reportingMode: 'aggregate', reportingMinimum: 3, objectives: [], topics: templateTopics(template),
+    objectives: [], topics: templateTopics(template),
     intro: 'We would like to hear about your experience as you leave.', description: '',
     activeVersion: null, guideVersions: [], draft: null, messages: { ...DEFAULT_MESSAGES },
     createdAt: new Date().toISOString(),

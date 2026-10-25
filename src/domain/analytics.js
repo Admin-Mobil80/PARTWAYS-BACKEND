@@ -1,6 +1,6 @@
 // Every number shown anywhere (dashboard, drill-down, assistant, reports, exports)
 // comes from computeInsights, so all views agree for the same selection.
-import { THEMES, DIMENSIONS, SECTIONS } from './catalog.js';
+import { THEMES, DIMENSIONS, SECTIONS, REPORTING_MINIMUM, REPORTING_MODE } from './catalog.js';
 
 export const PERIOD_BASES = {
   submission: 'Feedback submitted in period',
@@ -151,19 +151,12 @@ function filterWithoutSession(filters) {
   return f;
 }
 
-function minimumFor(programmes) {
-  return Math.max(...programmes.map((p) => p.reportingMinimum || 3), 1);
-}
-
-function reportingModeFor(programmes) {
-  return programmes.some((p) => p.reportingMode === 'aggregate') ? 'aggregate' : 'individual';
-}
 
 function core(ctx, q, period) {
   const pop = selectPopulation(ctx, q, period);
   const sessions = pop.findings.map(({ s }) => s);
   const N = sessions.length;
-  const min = minimumFor(pop.programmes);
+  const min = REPORTING_MINIMUM;
   const themes = themeStats(sessions, ctx.guideTopicsFor, ctx.themes);
   const modeMix = { initial: {}, used: {} };
   const durations = {};
@@ -411,7 +404,7 @@ export function computeInsights(data, query = {}) {
   const q = normaliseQuery(query);
   const cur = core(ctx, q, q.period);
   const prev = q.compareTo ? core(ctx, q, q.compareTo) : null;
-  const mode = reportingModeFor(cur._programmes);
+  const mode = REPORTING_MODE;
   const segs = segments(ctx, cur._rows, cur.minimum);
   const objectives = objectiveFindings(ctx, cur._rows, cur._programmes, cur.minimum, mode);
   const cmp = prev ? comparison(cur, prev) : null;
