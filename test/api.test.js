@@ -411,3 +411,25 @@ test('a restricted live Stripe key counts as live payments', async () => {
     if (before === undefined) delete process.env.STRIPE_SECRET_KEY; else process.env.STRIPE_SECRET_KEY = before;
   }
 });
+
+test('with self-service buying off, prices are hidden and purchases refused', async () => {
+  const before = process.env.SELF_SERVE_CREDITS;
+  process.env.SELF_SERVE_CREDITS = '0';
+  process.env.CREDITS_CONTACT_EMAIL = 'sales@partways.test';
+  try {
+    await inOwnWorkspace(async () => {
+      const b = await hr('GET', '/api/hr/billing');
+      assert.equal(b.selfServe, false);
+      assert.equal(b.packs, undefined, 'no prices');
+      assert.equal(b.contactEmail, 'sales@partways.test');
+      for (const path of ['/api/hr/billing/checkout', '/api/hr/billing/simulate']) {
+        const r = await call('POST', path, { pack: 'pack_10' });
+        assert.equal(r.status, 403, path);
+        assert.match(r.body.error, /sales@partways\.test/);
+      }
+    });
+  } finally {
+    if (before === undefined) delete process.env.SELF_SERVE_CREDITS; else process.env.SELF_SERVE_CREDITS = before;
+    delete process.env.CREDITS_CONTACT_EMAIL;
+  }
+});

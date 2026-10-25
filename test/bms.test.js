@@ -117,3 +117,30 @@ test('only the root manages the team; removal ends access at once', async () => 
   const audit = (await bms(req('GET', '/api/bms/audit', null, root))).body.entries.map((e) => e.action);
   assert.ok(audit.includes('team_member_added') && audit.includes('team_member_removed'));
 });
+
+test('organisations can request credits; adding credits in the BMS closes the request', async () => {
+  const hr = (method, p, body) => website({ ...req(method, p, body, hrToken), headers: { authorization: `Bearer ${hrToken}`, 'x-workspace': 'own' } });
+  const before = process.env.SELF_SERVE_CREDITS;
+  process.env.SELF_SERVE_CREDITS = '0';
+  try {
+    assert.equal((await hr('POST', '/api/hr/billing/request', { credits: 0 })).status, 400);
+    const asked = await hr('POST', '/api/hr/billing/request', { credits: 20, note: 'Next quarter' });
+    assert.equal(asked.status, 200, JSON.stringify(asked.body));
+    const again = await hr('POST', '/api/hr/billing/request', { credits: 25 });
+    assert.equal(again.body.updated, true, 'asking again updates the open request');
+    assert.equal((await hr('GET', '/api/hr/billing')).body.request.credits, 25);
+
+    const listed = (await bms(req('GET', '/api/bms/orgs', null, root))).body.organisations.find((o) => o.id === orgId);
+    assert.equal(listed.openRequest.credits, 25);
+    assert.equal(listed.openRequest.by, 'owner@acme.test');
+    const audit = (await bms(req('GET', '/api/bms/audit', null, root))).body.entries;
+    assert.equal(audit.filter((e) => e.action === 'credits_requested' && e.orgId === orgId).length, 1);
+
+    assert.equal((await bms(req('POST', `/api/bms/orgs/${orgId}/credits`, { delta: 25, reason: 'Requested' }, root))).status, 200);
+    assert.equal((await hr('GET', '/api/hr/billing')).body.request, null, 'fulfilled');
+    const after = (await bms(req('GET', '/api/bms/orgs', null, root))).body.organisations.find((o) => o.id === orgId);
+    assert.equal(after.openRequest, null);
+  } finally {
+    if (before === undefined) delete process.env.SELF_SERVE_CREDITS; else process.env.SELF_SERVE_CREDITS = before;
+  }
+});

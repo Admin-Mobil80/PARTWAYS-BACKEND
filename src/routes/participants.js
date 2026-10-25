@@ -201,8 +201,8 @@ async function checkCanInvite(programme, count) {
   const { unlimited, balance } = await creditSummary(store());
   if (!unlimited && balance < count) {
     fail(402, count === 1
-      ? 'You have no interview credits left. Buy credits to send more invitations.'
-      : `Inviting ${count} people needs ${count} credits, and you have ${balance}. Buy credits, or import fewer people.`, { code: 'no_credits' });
+      ? 'You have no interview credits left. Get more credits (Credits and billing) to send more invitations.'
+      : `Inviting ${count} people needs ${count} credits, and you have ${balance}. Get more credits, or import fewer people.`, { code: 'no_credits' });
   }
 }
 
@@ -299,7 +299,7 @@ async function sendMessage(p, kind, req) {
   if (kind === 'invitation') {
     if (p.invitation.status !== 'prepared') fail(409, 'This invitation has already been sent. Send a reminder instead.');
     const { unlimited, balance } = await creditSummary(store());
-    if (!unlimited && balance < 1) fail(402, 'You have no interview credits left. Buy credits to send more invitations.', { code: 'no_credits' });
+    if (!unlimited && balance < 1) fail(402, 'You have no interview credits left. Get more credits (Credits and billing) to send more invitations.', { code: 'no_credits' });
   } else {
     if (['submitted', 'declined', 'withdrawn'].includes(p.status)) fail(409, 'This person has already responded.');
     if (p.invitation.reminders.length >= (programme.reminder?.max ?? 2)) fail(409, 'The maximum number of reminders has been sent.');

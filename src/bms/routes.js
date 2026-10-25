@@ -46,11 +46,15 @@ async function orgStats(orgId) {
   };
 }
 
+const openRequests = async () => (await g().list('creditrequest')).filter((r) => r.status === 'open');
+
 async function allOrgs() {
-  const orgs = await g().list('org');
+  const [orgs, requests] = await Promise.all([g().list('org'), openRequests()]);
   return Promise.all(orgs.map(async (o) => {
     const { _detail, ...stats } = await orgStats(o.id);
-    return { id: o.id, name: o.name, country: o.country, ownerEmail: o.ownerEmail, createdAt: o.createdAt, ...stats };
+    const r = requests.find((x) => x.orgId === o.id);
+    return { id: o.id, name: o.name, country: o.country, ownerEmail: o.ownerEmail, createdAt: o.createdAt, ...stats,
+      openRequest: r ? { credits: r.credits, note: r.note, at: r.at, by: r.by } : null };
   }));
 }
 
@@ -97,8 +101,10 @@ route('GET', '/api/bms/orgs/:id', async (req) => {
   const { _detail, ...stats } = await orgStats(org.id);
   const byProgramme = (id) => _detail.participants.filter((p) => p.programmeId === id);
   const auditLog = (await g().list('bmsaudit')).filter((a) => a.orgId === org.id).sort((a, b) => b.at.localeCompare(a.at));
+  const request = (await openRequests()).find((r) => r.orgId === org.id);
   return {
-    organisation: { id: org.id, name: org.name, country: org.country, ownerEmail: org.ownerEmail, createdAt: org.createdAt, ...stats },
+    organisation: { id: org.id, name: org.name, country: org.country, ownerEmail: org.ownerEmail, createdAt: org.createdAt, ...stats,
+      openRequest: request ? { credits: request.credits, note: request.note, at: request.at, by: request.by } : null },
     members: _detail.members.map(({ email, name, role, addedAt }) => ({ email, name, role, addedAt }))
       .sort((a, b) => a.addedAt.localeCompare(b.addedAt)),
     programmes: _detail.programmes.map((p) => ({
@@ -128,6 +134,12 @@ route('POST', '/api/bms/orgs/:id/credits', async (req) => {
   };
   await s.put('ledger', entry);
   await audit(req.user.email, 'credits_adjusted', { orgId: org.id, orgName: org.name, delta, reason, balanceAfter: balance + delta });
+  // Adding credits answers any open request from this organisation.
+  if (delta > 0) {
+    for (const r of (await openRequests()).filter((x) => x.orgId === org.id)) {
+      await g().put('creditrequest', { ...r, status: 'fulfilled', fulfilledAt: entry.at, fulfilledBy: req.user.email, fulfilledCredits: delta });
+    }
+  }
   return { entry, balance: balance + delta };
 }, { auth: true });
 
@@ -179,6 +191,10 @@ route('GET', '/api/bms/audit', async () => {
       };
     }).filter(Boolean);
   }))).flat();
-  const entries = [...bmsEntries, ...credit].sort((a, b) => b.at.localeCompare(a.at)).slice(0, 500);
+  const requests = (await g().list('creditrequest')).map((r) => ({
+    id: r.id, at: r.at, by: r.by, action: 'credits_requested', orgId: r.orgId, orgName: r.orgName,
+    credits: r.credits, note: r.note, status: r.status,
+  }));
+  const entries = [...bmsEntries, ...credit, ...requests].sort((a, b) => b.at.localeCompare(a.at)).slice(0, 500);
   return { entries };
 }, { auth: true });

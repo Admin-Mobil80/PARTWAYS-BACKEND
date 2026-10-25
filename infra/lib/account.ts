@@ -101,4 +101,11 @@ export const PORTAL_DOMAINS = [ZONE_NAME, `www.${ZONE_NAME}`];
 export const BMS_DOMAINS = [`bms.${ZONE_NAME}`];
 /** The BMS root account: always allowed to sign in, and the only one who can add or remove team members. */
 export const BMS_ROOT_EMAIL = 'riyad@mobil80.com';
+
+// Whether organisations can buy credit packs themselves (prices on the website,
+// Stripe Checkout in the workspace). '0' while pricing is being decided: credits
+// are then added only by the PartWays team from the BMS, and organisations are
+// pointed to CREDITS_CONTACT_EMAIL. Set to '1' to open self-service buying.
+export const SELF_SERVE_CREDITS: '0' | '1' = '0';
+export const CREDITS_CONTACT_EMAIL = BMS_ROOT_EMAIL;
 export const BMS_PREFIX = 'BMS';

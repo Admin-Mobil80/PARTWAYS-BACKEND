@@ -100,7 +100,7 @@ export async function creditSummary(store) {
 export async function consumeCredit(store, participant, by = null) {
   const { unlimited, balance } = await creditSummary(store);
   if (unlimited) return null;
-  if (balance < 1) fail(402, 'You have no interview credits left. Buy credits to send more invitations.', { code: 'no_credits' });
+  if (balance < 1) fail(402, 'You have no interview credits left. Get more credits (Credits and billing) to send more invitations.', { code: 'no_credits' });
   const entry = { id: newId('led'), at: nowIso(), kind: 'invite', delta: -1, interviewId: participant.interviewId, note: `Invitation ${participant.interviewId}`, ...(by ? { by } : {}) };
   await store.put('ledger', entry);
   return entry;

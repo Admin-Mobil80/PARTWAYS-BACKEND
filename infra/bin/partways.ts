@@ -6,6 +6,7 @@ import {
   BMS_DOMAINS,
   BMS_PREFIX,
   BMS_ROOT_EMAIL,
+  CREDITS_CONTACT_EMAIL,
   DNS_REGION,
   ELEVENLABS_ZERO_RETENTION,
   GITHUB_OWNER,
@@ -22,6 +23,7 @@ import {
   PORTAL_PREFIX,
   PREFIX,
   REGION,
+  SELF_SERVE_CREDITS,
   WEBAPPS_BUCKET_NAME,
 } from '../lib/account';
 import { AuthStack } from '../lib/auth-stack';
@@ -108,6 +110,8 @@ function appStacks(env: cdk.Environment): cdk.Stack[] {
         SES_REGION: MAIL_REGION,
         INVITE_FROM_ADDRESS,
         WHATSAPP_PHONE_NUMBER_ID,
+        SELF_SERVE_CREDITS,
+        CREDITS_CONTACT_EMAIL,
         SITE_URL: `https://${PORTAL_DOMAINS[0]}`,
         TABLE_NAME: data.table.tableName,
         SECRETS_ARN: data.providerSecrets.secretArn,

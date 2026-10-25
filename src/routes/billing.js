@@ -3,14 +3,23 @@
 // Use a test-mode key (sk_test_…) until the account is ready to take payments.
 import Stripe from 'stripe';
 import { route, fail } from '../lib/http.js';
-import { store } from '../lib/data.js';
+import { store, nowIso } from '../lib/data.js';
 import { newId } from '../lib/ids.js';
 import { getStore } from '../store/index.js';
 import { PACKS, FREE_CREDITS, creditSummary, grantPurchase } from '../domain/workspaces.js';
+import { sendEmail } from '../lib/mailer.js';
 
 let client;
 const stripe = () => (process.env.STRIPE_SECRET_KEY ? (client ||= new Stripe(process.env.STRIPE_SECRET_KEY)) : null);
 // Live secret (sk_live_) and restricted (rk_live_) keys both take real payments.
+// Self-service buying can be switched off while pricing is decided; credits are
+// then added by the PartWays team from the BMS.
+export const selfServeCredits = () => process.env.SELF_SERVE_CREDITS !== '0';
+const contactEmail = () => process.env.CREDITS_CONTACT_EMAIL || null;
+const requireSelfServe = () => {
+  if (!selfServeCredits()) fail(403, `Credits are added by PartWays.${contactEmail() ? ` Contact ${contactEmail()} to add more.` : ''}`, { code: 'credits_by_partways' });
+};
+
 const stripeMode = () => (!process.env.STRIPE_SECRET_KEY ? 'simulated' : /^(sk|rk)_live_/.test(process.env.STRIPE_SECRET_KEY.trim()) ? 'live' : 'test');
 export { stripeMode };
 
@@ -27,13 +36,57 @@ async function ownWorkspace() {
   return org;
 }
 
-route('GET', '/api/hr/billing', async () => {
+// The organisation's open request for credits, if any (kept in the global store for the BMS).
+async function openRequest(orgId) {
+  const all = await getStore('global').list('creditrequest');
+  return all.filter((r) => r.orgId === orgId && r.status === 'open').sort((a, b) => b.at.localeCompare(a.at))[0] || null;
+}
+
+route('GET', '/api/hr/billing', async (req) => {
   const summary = await creditSummary(store());
-  return { ...summary, packs: Object.values(PACKS), freeCredits: FREE_CREDITS, payments: stripeMode() };
+  if (!selfServeCredits()) {
+    const request = req.user?.orgId ? await openRequest(req.user.orgId) : null;
+    return { ...summary, freeCredits: FREE_CREDITS, selfServe: false, contactEmail: contactEmail(), request: request && { credits: request.credits, note: request.note, at: request.at, by: request.by } };
+  }
+  return { ...summary, packs: Object.values(PACKS), freeCredits: FREE_CREDITS, payments: stripeMode(), selfServe: true };
+}, { auth: true });
+
+// While credits are added by PartWays, organisations ask for more here. One open
+// request per organisation: asking again updates it. The PartWays team is emailed
+// and sees it in the BMS, where adding credits closes it.
+route('POST', '/api/hr/billing/request', async (req) => {
+  const org = await ownWorkspace();
+  if (selfServeCredits()) fail(409, 'Credits can be bought on this page.');
+  const raw = req.body?.credits;
+  const credits = raw === undefined || raw === null || raw === '' ? null : Number(raw);
+  if (credits !== null && (!Number.isInteger(credits) || credits < 1 || credits > 1000)) fail(400, 'Enter a whole number of credits between 1 and 1,000, or leave it empty.');
+  const note = String(req.body?.note || '').trim().slice(0, 500);
+  const g = getStore('global');
+  const existing = await openRequest(req.user.orgId);
+  const request = {
+    ...(existing || { id: `${req.user.orgId}_${newId('crq')}`, orgId: req.user.orgId, status: 'open' }),
+    orgName: org?.name || '', by: req.user.email, credits, note, at: nowIso(),
+  };
+  await g.put('creditrequest', request);
+  const to = contactEmail();
+  if (to) {
+    const lines = [
+      `${request.orgName} has asked for ${credits ? `${credits} more credits` : 'more credits'}.`,
+      `Requested by: ${request.by}`,
+      `Current balance: ${(await creditSummary(store())).balance}`,
+      note ? `Note: ${note}` : null,
+      '', 'Add credits from the BMS:',
+    ].filter((x) => x !== null).join('\n');
+    try {
+      await sendEmail({ to, subject: `Credit request: ${request.orgName}`, text: lines, link: `https://bms.partways.org/#/orgs/${request.orgId}`, cta: 'Open in the BMS' });
+    } catch (err) { console.error('Credit request email failed', err); }
+  }
+  return { request: { credits: request.credits, note: request.note, at: request.at, by: request.by }, updated: !!existing };
 }, { auth: true });
 
 route('POST', '/api/hr/billing/checkout', async (req) => {
   await ownWorkspace();
+  requireSelfServe();
   const pack = PACKS[req.body?.pack];
   if (!pack) fail(400, 'Choose a credit pack.');
   if (!stripe()) return { mode: 'simulated', pack: pack.id };
@@ -71,6 +124,7 @@ route('POST', '/api/hr/billing/confirm', async (req) => {
 
 route('POST', '/api/hr/billing/simulate', async (req) => {
   await ownWorkspace();
+  requireSelfServe();
   if (stripe()) fail(409, 'Payments are configured, so purchases go through Stripe Checkout.');
   if (!PACKS[req.body?.pack]) fail(400, 'Choose a credit pack.');
   const { entry } = await grantPurchase(store(), { ref: newId('sim'), packId: req.body.pack, simulated: true, by: req.user.email });
