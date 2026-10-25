@@ -18,7 +18,9 @@ async function dispatchIn(routes, req, { authenticate }) {
       let user = null;
       if (r.opts.auth) {
         user = await authenticate(req);
-        if (!user) return { status: 401, body: { error: 'Please sign in to continue.' } };
+        if (!user) return { status: 401, body: r.opts.auth === 'api'
+          ? { error: 'Missing or invalid API key. Send it as Authorization: Bearer <key>.', details: { code: 'unauthorized' } }
+          : { error: 'Please sign in to continue.' } };
       }
       const res = await r.handler({ ...req, params, user });
       if (res?.stream) return res;

@@ -447,3 +447,68 @@ test('with self-service buying off, prices are hidden and purchases refused', as
     delete process.env.CREDITS_CONTACT_EMAIL;
   }
 });
+
+test('PartWays API: an HR system starts, looks up and cancels invitations with an API key', async () => {
+  const saved = token;
+  token = (await signUp('hris@example.net', 'HRIS Org')).token;
+  try {
+    await inOwnWorkspace(async () => {
+      const { programmes } = await hr('GET', '/api/hr/programmes');
+      const prog = programmes[0].id;
+      await hr('POST', `/api/hr/programmes/${prog}/activate`, { acknowledgeGaps: true });
+      const { key, secret } = await hr('POST', '/api/hr/apikeys', { name: 'Workday' });
+      assert.match(secret, /^pw_live_[0-9a-f]{12}_[A-Za-z0-9_-]{32}$/);
+      assert.equal(key.hash, undefined, 'the hash never leaves PartWays');
+      assert.ok(!JSON.stringify(await hr('GET', '/api/hr/apikeys')).includes(secret.slice(-20)), 'the secret is shown once only');
+
+      const api = (method, p, body, k = secret) => call(method, p, body, { authorization: `Bearer ${k}`, 'x-workspace': undefined });
+      assert.equal((await api('GET', '/api/v1/programmes', null, 'pw_live_000000000000_' + 'x'.repeat(32))).status, 401);
+      assert.equal((await api('GET', '/api/v1/programmes', null, token)).status, 401, 'a sign-in token is not an API key');
+      assert.equal((await call('GET', '/api/v1/programmes', null, { authorization: undefined, 'x-api-key': secret })).status, 200, 'X-API-Key works too');
+      assert.deepEqual((await api('GET', '/api/v1/programmes')).body.programmes.map((p) => p.id), [prog]);
+
+      const made = await api('POST', '/api/v1/invitations', { programmeId: prog, email: 'Leaver@Example.com', externalId: 'case-1001', departureDate: '2026-11-30', businessUnit: 'Sales' });
+      assert.equal(made.status, 201, JSON.stringify(made.body));
+      const inv = made.body.invitation;
+      assert.match(inv.interviewId, /^PW-/);
+      assert.equal(inv.invitation.status, 'sent');
+      assert.equal(inv.externalId, 'case-1001');
+      assert.ok(!JSON.stringify(made.body).includes('leaver@'), 'contact details are never returned');
+      assert.equal((await hr('GET', '/api/hr/me')).credits.balance, 2, 'one credit per invitation');
+
+      const again = await api('POST', '/api/v1/invitations', { programmeId: prog, email: 'leaver@example.com', externalId: 'case-1001' });
+      assert.equal(again.status, 200, 'repeating a request with the same externalId is safe');
+      assert.equal(again.body.created, false);
+      assert.equal(again.body.invitation.interviewId, inv.interviewId);
+      assert.equal((await hr('GET', '/api/hr/me')).credits.balance, 2);
+      assert.equal((await api('POST', '/api/v1/invitations', { programmeId: prog, email: 'leaver@example.com' })).status, 409);
+      assert.equal((await api('POST', '/api/v1/invitations', { programmeId: prog })).status, 400);
+      assert.equal((await api('POST', '/api/v1/invitations', { programmeId: 'prog_nope', email: 'x@example.com' })).status, 404);
+
+      const held = await api('POST', '/api/v1/invitations', { programmeId: prog, mobile: '+44 7700 900777', send: false });
+      assert.equal(held.body.invitation.invitation.status, 'prepared');
+      assert.equal((await api('POST', `/api/v1/invitations/${held.body.invitation.interviewId}/send`)).body.invitation.invitation.status, 'sent');
+
+      const got = await api('GET', `/api/v1/invitations/${inv.interviewId.toLowerCase()}`);
+      assert.equal(got.status, 200);
+      assert.equal(got.body.invitation.status, 'invited');
+      assert.equal((await api('GET', '/api/v1/invitations?externalId=case-1001')).body.invitations.length, 1);
+      assert.equal((await api('POST', `/api/v1/invitations/${inv.interviewId}/cancel`)).body.invitation.status, 'cancelled');
+
+      // Credits used through the API are recorded against the key.
+      const { getStore } = await import('../src/store/index.js');
+      const { orgId } = await getStore('global').get('apikey', key.id);
+      const used = (await getStore(orgId).list('ledger')).filter((e) => e.kind === 'invite');
+      assert.deepEqual(used.map((e) => e.by), ['api:Workday', 'api:Workday']);
+
+      await hr('DELETE', `/api/hr/apikeys/${key.id}`);
+      assert.equal((await api('GET', '/api/v1/programmes')).status, 401, 'a revoked key stops working');
+    });
+    // Keys belong to the organisation's own workspace, and reach no other workspace.
+    assert.equal((await call('POST', '/api/hr/apikeys', { name: 'Demo' })).status, 409);
+  } finally { token = saved; }
+  const theirs = await inOwnWorkspace(() => hr('POST', '/api/hr/apikeys', { name: 'Other' }));
+  const r = await call('GET', '/api/v1/invitations', null, { authorization: `Bearer ${theirs.secret}` });
+  assert.equal(r.status, 200);
+  assert.ok(r.body.invitations.every((i) => i.externalId !== 'case-1001'), 'one organisation never sees another\'s invitations');
+});

@@ -7,3 +7,5 @@ import './insights.js';
 import './reports.js';
 import './billing.js';
 import './team.js';
+import './apikeys.js';
+import './api.js';

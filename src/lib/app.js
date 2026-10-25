@@ -3,6 +3,7 @@ import '../routes/index.js';
 import { dispatch } from './http.js';
 import { runInWorkspace } from './context.js';
 import { authenticate } from '../auth/index.js';
+import { authenticateApiKey } from '../domain/apikeys.js';
 import { orgForToken } from '../store/index.js';
 import { demoNamespace, ensureDemoWorkspace } from '../domain/workspaces.js';
 
@@ -10,6 +11,12 @@ import { demoNamespace, ensureDemoWorkspace } from '../domain/workspaces.js';
 // its demonstration copy), or for employee links the workspace the link belongs to.
 async function resolveWorkspace(req) {
   const p = req.path;
+  // The PartWays API: an API key stands in for an owner of its own workspace, never the demo.
+  if (p.startsWith('/api/v1/')) {
+    const found = await authenticateApiKey(req);
+    if (!found) return { ns: 'global', user: null };
+    return { ns: found.orgId, user: { email: `api:${found.key.name}`, name: found.key.name, orgId: found.orgId, role: 'owner', workspace: 'own', apiKeyId: found.key.id } };
+  }
   if (p.startsWith('/api/hr/')) {
     const user = await authenticate(req);
     if (!user) return { ns: 'global', user: null };

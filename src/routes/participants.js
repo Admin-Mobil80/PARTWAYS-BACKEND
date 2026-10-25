@@ -173,7 +173,7 @@ route('POST', '/api/hr/participants/import/validate', async (req) => {
   return { rows: results, counts };
 }, { auth: true });
 
-async function createParticipant(programme, clean, population) {
+async function createParticipant(programme, clean, population, extra = {}) {
   const id = newId('par');
   const p = {
     id, interviewId: await assignInterviewId(store().ns, id), programmeId: programme.id, population,
@@ -182,7 +182,7 @@ async function createParticipant(programme, clean, population) {
     departureDate: clean.departureDate, departureType: clean.departureType || 'voluntary', status: 'invited',
     invitation: { token: newToken(), status: 'prepared', simulated: true, preparedAt: nowIso(), sentAt: null, openedAt: null, respondedAt: null,
       deadline: new Date(Date.now() + 21 * 864e5).toISOString().slice(0, 10), reminders: [] },
-    declineReason: null, sessionIds: [], createdAt: nowIso(),
+    declineReason: null, sessionIds: [], createdAt: nowIso(), ...extra,
   };
   await store().put('participant', p);
   return p;
@@ -383,4 +383,5 @@ route('POST', '/api/hr/participants/:id/cancel', async (req) => {
   return { participant: opsView(p, []) };
 }, { auth: true });
 
-export { createParticipant };
+// Shared with the PartWays API (routes/api.js).
+export { createParticipant, validateRow, existingContacts, noContacts, checkCanInvite, sendMessage };
