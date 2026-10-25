@@ -17,7 +17,7 @@ const stripe = () => (process.env.STRIPE_SECRET_KEY ? (client ||= new Stripe(pro
 export const selfServeCredits = () => process.env.SELF_SERVE_CREDITS !== '0';
 const contactEmail = () => process.env.CREDITS_CONTACT_EMAIL || null;
 const requireSelfServe = () => {
-  if (!selfServeCredits()) fail(403, `Credits are added by PartWays.${contactEmail() ? ` Contact ${contactEmail()} to add more.` : ''}`, { code: 'credits_by_partways' });
+  if (!selfServeCredits()) fail(403, 'Credits are added by PartWays. Use Request more credits on the Credits and billing page.', { code: 'credits_by_partways' });
 };
 
 const stripeMode = () => (!process.env.STRIPE_SECRET_KEY ? 'simulated' : /^(sk|rk)_live_/.test(process.env.STRIPE_SECRET_KEY.trim()) ? 'live' : 'test');
@@ -46,7 +46,7 @@ route('GET', '/api/hr/billing', async (req) => {
   const summary = await creditSummary(store());
   if (!selfServeCredits()) {
     const request = req.user?.orgId ? await openRequest(req.user.orgId) : null;
-    return { ...summary, freeCredits: FREE_CREDITS, selfServe: false, contactEmail: contactEmail(), request: request && { credits: request.credits, note: request.note, at: request.at, by: request.by } };
+    return { ...summary, freeCredits: FREE_CREDITS, selfServe: false, request: request && { credits: request.credits, note: request.note, at: request.at, by: request.by } };
   }
   return { ...summary, packs: Object.values(PACKS), freeCredits: FREE_CREDITS, payments: stripeMode(), selfServe: true };
 }, { auth: true });

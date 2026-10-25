@@ -421,11 +421,11 @@ test('with self-service buying off, prices are hidden and purchases refused', as
       const b = await hr('GET', '/api/hr/billing');
       assert.equal(b.selfServe, false);
       assert.equal(b.packs, undefined, 'no prices');
-      assert.equal(b.contactEmail, 'sales@partways.test');
+      assert.ok(!JSON.stringify(b).includes('sales@partways.test'), 'the PartWays contact address is not shown');
       for (const path of ['/api/hr/billing/checkout', '/api/hr/billing/simulate']) {
         const r = await call('POST', path, { pack: 'pack_10' });
         assert.equal(r.status, 403, path);
-        assert.match(r.body.error, /sales@partways\.test/);
+        assert.match(r.body.error, /Request more credits/);
       }
     });
   } finally {
